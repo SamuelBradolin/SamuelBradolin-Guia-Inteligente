@@ -1,0 +1,73 @@
+{
+  "entities": {
+    "producoes": {
+      "title": "Produções",
+      "description": "Lista de guias acústicas enviadas pelos compositores para produção e curadoria.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "composerName": { "type": "string" },
+        "composerEmail": { "type": "string" },
+        "isCompositorPro": { "type": "boolean" },
+        "title": { "type": "string" },
+        "genre": { "type": "string" },
+        "voiceType": { "type": "string" },
+        "directionDetails": { "type": "string" },
+        "partners": { "type": "string" },
+        "audioName": { "type": "string" },
+        "audioUrl": { "type": "string" },
+        "status": { "type": "string", "enum": ["Fila de Espera", "Em Produção", "Concluída"] },
+        "finalAudioUrl": { "type": "string" },
+        "date": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["composerName", "composerEmail", "title", "audioUrl", "status"]
+    },
+    "transacoes": {
+      "title": "Transações",
+      "description": "Histórico de compras e faturamento da plataforma.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "dateTime": { "type": "string" },
+        "clientName": { "type": "string" },
+        "clientEmail": { "type": "string" },
+        "type": { "type": "string" },
+        "amountPaid": { "type": "number" },
+        "discountApplied": { "type": "number" },
+        "timestamp": { "type": "string", "format": "date-time" }
+      },
+      "required": ["clientName", "clientEmail", "type", "amountPaid", "discountApplied"]
+    },
+    "configuracoes": {
+      "title": "Configurações",
+      "description": "Configurações de CMS, preços, benefícios e áudios editados pelo produtor.",
+      "type": "object",
+      "properties": {
+        "tag": { "type": "string" },
+        "title": { "type": "string" },
+        "price": { "type": "string" },
+        "sub": { "type": "string" },
+        "benefits": { "type": "array" },
+        "btnText": { "type": "string" },
+        "antesAudioUrl": { "type": "string" },
+        "depoisAudioUrl": { "type": "string" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      }
+    }
+  },
+  "firestore": {
+    "/producoes/{producaoId}": {
+      "schema": "producoes",
+      "description": "Armazena as solicitações de produção de guias musicais."
+    },
+    "/transacoes/{transacaoId}": {
+      "schema": "transacoes",
+      "description": "Registros de compras de créditos ou guias avulsas."
+    },
+    "/configuracoes/{configId}": {
+      "schema": "configuracoes",
+      "description": "CMS para card de preços e demonstração de áudios antes/depois."
+    }
+  }
+}

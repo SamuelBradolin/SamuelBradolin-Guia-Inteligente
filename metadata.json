@@ -1,0 +1,6 @@
+{
+  "name": "Guia Inteligente",
+  "description": "Guias acústicas profissionais de voz e violão para compositores.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

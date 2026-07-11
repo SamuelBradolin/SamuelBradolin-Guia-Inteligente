@@ -1,0 +1,30 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // Default-deny catch-all safety net
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // Coleção de Produções
+    match /producoes/{producaoId} {
+      allow read: if true;
+      allow create: if true;
+      allow update, delete: if true;
+    }
+
+    // Coleção de Transações
+    match /transacoes/{transacaoId} {
+      allow read: if true;
+      allow create: if true;
+      allow update, delete: if true;
+    }
+
+    // Coleção de Configurações do Site (CMS)
+    match /configuracoes/{configId} {
+      allow read: if true;
+      allow write: if true;
+    }
+  }
+}
