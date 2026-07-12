@@ -2244,53 +2244,36 @@ export default function AdminDashboard({ onLogout, onSwitchToClient }: AdminDash
                             <p className="text-xs text-white truncate font-mono">{pedido.audioName || 'audio_bruto.mp3'}</p>
                           </div>
 
-                          {pedido.audio_bruto_base64 ? (
-                            <button
-                              onClick={() => downloadBase64File(pedido.audio_bruto_base64 || '', pedido.audioName || 'audio_bruto.mp3')}
-                              className="p-2.5 bg-slate-900 hover:bg-slate-800 border border-slate-800 text-cyan-400 hover:text-cyan-300 rounded-lg transition-colors cursor-pointer shrink-0"
-                              title="Baixar Áudio Bruto"
-                            >
-                              <Download className="h-4 w-4" />
-                            </button>
-                          ) : pedido.audioUrl ? (
-                            <button
-                              onClick={() => downloadBase64File(pedido.audioUrl || '', pedido.audioName || 'audio_bruto.mp3')}
-                              className="p-2.5 bg-slate-900 hover:bg-slate-800 border border-slate-800 text-cyan-400 hover:text-cyan-300 rounded-lg transition-colors cursor-pointer shrink-0"
-                              title="Baixar Áudio Bruto"
-                            >
-                              <Download className="h-4 w-4" />
-                            </button>
-                          ) : (
-                            <button
-                              disabled
-                              className="p-2.5 bg-slate-900/50 border border-slate-950 text-slate-600 rounded-lg shrink-0 cursor-not-allowed"
-                              title="Áudio não disponível"
-                            >
-                              <Download className="h-4 w-4" />
-                            </button>
-                          )}
+                          <button
+                            onClick={() => downloadBase64File(
+                              pedido.audio_bruto_base64
+                                ? (pedido.audio_bruto_base64.startsWith('data:') ? pedido.audio_bruto_base64 : 'data:audio/mp3;base64,' + pedido.audio_bruto_base64)
+                                : (pedido.audioUrl
+                                  ? (pedido.audioUrl.startsWith('data:') || pedido.audioUrl.startsWith('http') ? pedido.audioUrl : 'data:audio/mp3;base64,' + pedido.audioUrl)
+                                  : ''),
+                              pedido.audioName || 'audio_bruto.mp3'
+                            )}
+                            className="p-2.5 bg-slate-900 hover:bg-slate-800 border border-slate-800 text-cyan-400 hover:text-cyan-300 rounded-lg transition-colors cursor-pointer shrink-0"
+                            title="Baixar Áudio Bruto"
+                          >
+                            <Download className="h-4 w-4" />
+                          </button>
                         </div>
 
                         {/* Common HTML5 Audio Player */}
-                        {pedido.audio_bruto_base64 ? (
-                          <div className="pt-2 border-t border-slate-900">
-                            <audio 
-                              controls 
-                              src={'data:audio/mp3;base64,' + pedido.audio_bruto_base64} 
-                              className="w-full h-8 rounded-lg bg-slate-900 text-cyan-400 mt-2"
-                            />
-                          </div>
-                        ) : pedido.audioUrl ? (
-                          <div className="pt-2 border-t border-slate-900">
-                            <audio 
-                              controls 
-                              src={pedido.audioUrl.startsWith('data:') ? pedido.audioUrl : 'data:audio/mp3;base64,' + pedido.audioUrl} 
-                              className="w-full h-8 rounded-lg bg-slate-900 text-cyan-400 mt-2"
-                            />
-                          </div>
-                        ) : (
-                          <p className="text-[10px] text-slate-600 italic">Áudio bruto não disponível</p>
-                        )}
+                        <div className="pt-2 border-t border-slate-900">
+                          <audio 
+                            controls 
+                            src={
+                              pedido.audio_bruto_base64 
+                                ? (pedido.audio_bruto_base64.startsWith('data:') ? pedido.audio_bruto_base64 : 'data:audio/mp3;base64,' + pedido.audio_bruto_base64)
+                                : (pedido.audioUrl
+                                  ? (pedido.audioUrl.startsWith('data:') || pedido.audioUrl.startsWith('http') ? pedido.audioUrl : 'data:audio/mp3;base64,' + pedido.audioUrl)
+                                  : '')
+                            } 
+                            className="w-full h-8 rounded-lg bg-slate-900 text-cyan-400 mt-2"
+                          />
+                        </div>
                       </div>
                     </div>
 
