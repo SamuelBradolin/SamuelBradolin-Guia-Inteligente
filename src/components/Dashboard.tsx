@@ -76,7 +76,7 @@ export default function Dashboard({ userEmail, onLogout }: DashboardProps) {
         id: c.id,
         title: c.nome_musica || c.title || 'Sem Título',
         date: c.data || c.date || '11/07/2026',
-        status: c.status || 'Fila de Espera',
+        status: (c.status === 'Concluído' || c.status === 'Concluída') ? 'Concluída' : (c.status || 'Fila de Espera'),
         genre: c.genre || 'Sertanejo',
         voiceType: c.voiceType || 'Voz Masculina de Estúdio',
         finalAudioUrl: c.audio_final_base64 || c.url_audio_final || c.finalAudioUrl || c.url_audio_entrega
@@ -462,7 +462,12 @@ export default function Dashboard({ userEmail, onLogout }: DashboardProps) {
   };
 
   const handleDownloadAudio = (title: string, finalAudioUrl?: string) => {
-    if (finalAudioUrl && finalAudioUrl.startsWith('http')) {
+    if (!finalAudioUrl) {
+      showToast("Áudio final não disponível.");
+      return;
+    }
+
+    if (finalAudioUrl.startsWith('http')) {
       showToast(`Iniciando download em WAV de alta definição: "${title}"`);
       const element = document.createElement('a');
       element.setAttribute('href', finalAudioUrl);
@@ -474,15 +479,55 @@ export default function Dashboard({ userEmail, onLogout }: DashboardProps) {
       element.click();
       document.body.removeChild(element);
     } else {
-      showToast(`Iniciando download em WAV de alta definição (Simulação): "${title}"`);
-      // Create a mock link element
-      const element = document.createElement('a');
-      element.setAttribute('href', 'data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQAAAAA=');
-      element.setAttribute('download', `${title.toLowerCase().replace(/\s+/g, '_')}_guia_acustica.wav`);
-      element.style.display = 'none';
-      document.body.appendChild(element);
-      element.click();
-      document.body.removeChild(element);
+      // It's a Base64 string!
+      try {
+        showToast(`Iniciando download da guia acústica final: "${title}"`);
+        let base64Data = finalAudioUrl;
+        let contentType = 'audio/mp3';
+        
+        if (finalAudioUrl.startsWith('data:')) {
+          const parts = finalAudioUrl.split(',');
+          const mimePart = parts[0].match(/:(.*?);/);
+          if (mimePart) contentType = mimePart[1];
+          base64Data = parts[1];
+        }
+        
+        const byteCharacters = atob(base64Data);
+        const byteArrays = [];
+        
+        for (let offset = 0; offset < byteCharacters.length; offset += 512) {
+          const slice = byteCharacters.slice(offset, offset + 512);
+          const byteNumbers = new Array(slice.length);
+          for (let i = 0; i < slice.length; i++) {
+            byteNumbers[i] = slice.charCodeAt(i);
+          }
+          const byteArray = new Uint8Array(byteNumbers);
+          byteArrays.push(byteArray);
+        }
+        
+        const blob = new Blob(byteArrays, { type: contentType });
+        const blobUrl = URL.createObjectURL(blob);
+        
+        const element = document.createElement('a');
+        element.setAttribute('href', blobUrl);
+        element.setAttribute('download', `${title.toLowerCase().replace(/\s+/g, '_')}_guia_acustica.mp3`);
+        element.style.display = 'none';
+        document.body.appendChild(element);
+        element.click();
+        document.body.removeChild(element);
+        URL.revokeObjectURL(blobUrl);
+      } catch (err) {
+        console.error("Error downloading final guide Base64:", err);
+        // Fallback
+        const src = finalAudioUrl.startsWith('data:') ? finalAudioUrl : 'data:audio/mp3;base64,' + finalAudioUrl;
+        const element = document.createElement('a');
+        element.setAttribute('href', src);
+        element.setAttribute('download', `${title.toLowerCase().replace(/\s+/g, '_')}_guia_acustica.mp3`);
+        element.style.display = 'none';
+        document.body.appendChild(element);
+        element.click();
+        document.body.removeChild(element);
+      }
     }
   };
 

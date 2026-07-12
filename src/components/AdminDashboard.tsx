@@ -2166,201 +2166,216 @@ export default function AdminDashboard({ onLogout, onSwitchToClient }: AdminDash
 
       {/* MODAL: Central de Produção / Detalhes da Música */}
       <AnimatePresence>
-        {selectedComp && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/90 backdrop-blur-md overflow-y-auto">
-            <motion.div
-              initial={{ opacity: 0, scale: 0.95 }}
-              animate={{ opacity: 1, scale: 1 }}
-              exit={{ opacity: 0, scale: 0.95 }}
-              className="w-full max-w-2xl bg-[#111419] border border-slate-850 rounded-2xl overflow-hidden relative shadow-2xl p-6 md:p-8 space-y-6 my-auto"
-            >
-              {/* Close Button */}
-              <button
-                onClick={() => {
-                  setSelectedComp(null);
-                  setUploadedDeliverFile(null);
-                }}
-                className="absolute top-4 right-4 text-slate-500 hover:text-white"
+        {selectedComp && (() => {
+          const pedido = selectedComp;
+          return (
+            <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/90 backdrop-blur-md overflow-y-auto">
+              <motion.div
+                initial={{ opacity: 0, scale: 0.95 }}
+                animate={{ opacity: 1, scale: 1 }}
+                exit={{ opacity: 0, scale: 0.95 }}
+                className="w-full max-w-2xl bg-[#111419] border border-slate-850 rounded-2xl overflow-hidden relative shadow-2xl p-6 md:p-8 space-y-6 my-auto"
               >
-                <X className="h-5 w-5" />
-              </button>
+                {/* Close Button */}
+                <button
+                  onClick={() => {
+                    setSelectedComp(null);
+                    setUploadedDeliverFile(null);
+                  }}
+                  className="absolute top-4 right-4 text-slate-500 hover:text-white"
+                >
+                  <X className="h-5 w-5" />
+                </button>
 
-              {/* Title & Tags */}
-              <div className="space-y-1">
-                <div className="flex flex-wrap items-center gap-2">
-                  <span className="text-[10px] font-mono font-bold tracking-widest text-cyan-400 uppercase">DETALHES DO PROJETO</span>
-                  {selectedComp.isCompositorPro && (
-                    <span className="text-[9px] font-mono font-extrabold text-[#00ff87] bg-[#00ff87]/10 px-2.5 py-0.5 rounded border border-[#00ff87]/20 shadow-[0_0_8px_rgba(0,255,135,0.1)]">
-                      ⚡ COMPOSITOR PRO
-                    </span>
-                  )}
-                </div>
-                <h3 className="font-display text-xl md:text-2xl font-black text-white">{selectedComp.title}</h3>
-                <p className="text-xs text-slate-400 font-mono">
-                  Compositor: <span className="text-slate-200 font-sans font-semibold">{selectedComp.composerName}</span> ({selectedComp.composerEmail})
-                </p>
-              </div>
-
-              {/* Grid content */}
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                
-                {/* Left: Lyrics & Info */}
-                <div className="space-y-4">
-                  <div className="space-y-1">
-                    <label className="block text-[10px] font-mono text-slate-500 font-bold uppercase">Letra Recebida</label>
-                    <div className="w-full h-48 px-4 py-3 bg-[#0d0f13] border border-slate-900 rounded-xl text-xs text-slate-300 overflow-y-auto whitespace-pre-line font-medium leading-relaxed">
-                      {selectedComp.lyrics || 'Letra não fornecida.'}
-                    </div>
+                {/* Title & Tags */}
+                <div className="space-y-1">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="text-[10px] font-mono font-bold tracking-widest text-cyan-400 uppercase">DETALHES DO PROJETO</span>
+                    {pedido.isCompositorPro && (
+                      <span className="text-[9px] font-mono font-extrabold text-[#00ff87] bg-[#00ff87]/10 px-2.5 py-0.5 rounded border border-[#00ff87]/20 shadow-[0_0_8px_rgba(0,255,135,0.1)]">
+                        ⚡ COMPOSITOR PRO
+                      </span>
+                    )}
                   </div>
-
-                  <div className="grid grid-cols-2 gap-4 text-xs font-mono">
-                    <div>
-                      <span className="text-slate-500 block text-[9px] font-bold uppercase">Parceiros / Coautores:</span>
-                      <span className="text-slate-300 font-sans font-medium">{selectedComp.partners || 'Solo'}</span>
-                    </div>
-                    <div>
-                      <span className="text-slate-500 block text-[9px] font-bold uppercase">Voz Solicitada:</span>
-                      <span className="text-slate-300 font-sans font-medium">{selectedComp.voiceType}</span>
-                    </div>
-                  </div>
+                  <h3 className="font-display text-xl md:text-2xl font-black text-white">{pedido.title}</h3>
+                  <p className="text-xs text-slate-400 font-mono">
+                    Compositor: <span className="text-slate-200 font-sans font-semibold">{pedido.composerName}</span> ({pedido.composerEmail})
+                  </p>
                 </div>
 
-                {/* Right: Observações e Áudio */}
-                <div className="space-y-4 flex flex-col justify-between">
+                {/* Grid content */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  
+                  {/* Left: Lyrics & Info */}
                   <div className="space-y-4">
                     <div className="space-y-1">
-                      <label className="block text-[10px] font-mono text-slate-500 font-bold uppercase">Direção / Observações do Compositor</label>
-                      <p className="p-3 bg-[#0d0f13] border border-slate-900 rounded-xl text-xs text-slate-400 italic leading-relaxed">
-                        "{selectedComp.directionDetails || 'Sem observações adicionais.'}"
-                      </p>
+                      <label className="block text-[10px] font-mono text-slate-500 font-bold uppercase">Letra Recebida</label>
+                      <div className="w-full h-48 px-4 py-3 bg-[#0d0f13] border border-slate-900 rounded-xl text-xs text-slate-300 overflow-y-auto whitespace-pre-line font-medium leading-relaxed">
+                        {pedido.lyrics || 'Letra não fornecida.'}
+                      </div>
                     </div>
 
-                    <div className="p-4 rounded-xl bg-slate-950 border border-slate-900 flex flex-col gap-3">
-                      <div className="flex items-center justify-between">
-                        <div className="space-y-0.5 min-w-0">
-                          <span className="text-[9px] font-mono text-slate-500 uppercase block">ÁUDIO BRUTO RECEBIDO (Celular):</span>
-                          <p className="text-xs text-white truncate font-mono">{selectedComp.audioName || 'audio_bruto.mp3'}</p>
-                        </div>
-
-                        {selectedComp.audio_bruto_base64 || selectedComp.audioUrl ? (
-                          <button
-                            onClick={() => downloadBase64File(selectedComp.audio_bruto_base64 || selectedComp.audioUrl || '', selectedComp.audioName || 'audio_bruto.mp3')}
-                            className="p-2.5 bg-slate-900 hover:bg-slate-800 border border-slate-800 text-cyan-400 hover:text-cyan-300 rounded-lg transition-colors cursor-pointer shrink-0"
-                            title="Baixar Áudio Bruto"
-                          >
-                            <Download className="h-4 w-4" />
-                          </button>
-                        ) : (
-                          <button
-                            disabled
-                            className="p-2.5 bg-slate-900/50 border border-slate-950 text-slate-600 rounded-lg shrink-0 cursor-not-allowed"
-                            title="Áudio não disponível"
-                          >
-                            <Download className="h-4 w-4" />
-                          </button>
-                        )}
+                    <div className="grid grid-cols-2 gap-4 text-xs font-mono">
+                      <div>
+                        <span className="text-slate-500 block text-[9px] font-bold uppercase">Parceiros / Coautores:</span>
+                        <span className="text-slate-300 font-sans font-medium">{pedido.partners || 'Solo'}</span>
                       </div>
-
-                      {/* Common HTML5 Audio Player */}
-                      {selectedComp.audio_bruto_base64 || selectedComp.audioUrl ? (
-                        <div className="pt-2 border-t border-slate-900">
-                          <audio 
-                            controls 
-                            src={
-                              selectedComp.audio_bruto_base64 
-                                ? (selectedComp.audio_bruto_base64.startsWith('data:') ? selectedComp.audio_bruto_base64 : 'data:audio/mp3;base64,' + selectedComp.audio_bruto_base64)
-                                : (selectedComp.audioUrl && selectedComp.audioUrl.startsWith('data:') ? selectedComp.audioUrl : (selectedComp.audioUrl ? 'data:audio/mp3;base64,' + selectedComp.audioUrl : ''))
-                            } 
-                            className="w-full h-8 rounded-lg bg-slate-900 text-cyan-400 mt-2"
-                          />
-                        </div>
-                      ) : (
-                        <p className="text-[10px] text-slate-600 italic">Áudio bruto não disponível</p>
-                      )}
+                      <div>
+                        <span className="text-slate-500 block text-[9px] font-bold uppercase">Voz Solicitada:</span>
+                        <span className="text-slate-300 font-sans font-medium">{pedido.voiceType}</span>
+                      </div>
                     </div>
                   </div>
 
-                  {/* Delivery Input Area */}
-                  <div className="space-y-3 pt-4 border-t border-slate-900/60">
-                    <label className="block text-[10px] font-mono text-slate-400 font-bold uppercase">
-                      Entrega da Guia Acústica Final (WAV)
-                    </label>
-
-                    {selectedComp.status === 'Concluída' || selectedComp.status === 'Concluído' ? (
-                      <div className="p-3.5 bg-emerald-500/5 border border-emerald-500/15 rounded-xl space-y-1.5 text-center">
-                        <p className="text-xs text-[#00ff87] font-bold">✓ GUIA CONCLUÍDA E ENTREGUE</p>
-                        <p className="text-[10px] text-slate-400 font-mono break-all">{selectedComp.finalAudioUrl}</p>
+                  {/* Right: Observações e Áudio */}
+                  <div className="space-y-4 flex flex-col justify-between">
+                    <div className="space-y-4">
+                      <div className="space-y-1">
+                        <label className="block text-[10px] font-mono text-slate-500 font-bold uppercase">Direção / Observações do Compositor</label>
+                        <p className="p-3 bg-[#0d0f13] border border-slate-900 rounded-xl text-xs text-slate-400 italic leading-relaxed">
+                          "{pedido.directionDetails || 'Sem observações adicionais.'}"
+                        </p>
                       </div>
-                    ) : (
-                      <div className="space-y-2.5">
-                        <div className="flex gap-2">
-                          <input
-                            type="file"
-                            accept="audio/*"
-                            id="deliver-file-input"
-                            className="hidden"
-                            onChange={(e) => {
-                              if (e.target.files && e.target.files[0]) {
-                                const file = e.target.files[0];
-                                setDeliverFileObj(file);
-                                setUploadedDeliverFile(file.name);
-                                showToast(`Áudio selecionado: ${file.name}`);
-                              }
-                            }}
-                          />
-                          <input
-                            type="text"
-                            placeholder="Escolha o arquivo WAV da guia final..."
-                            readOnly
-                            value={uploadedDeliverFile || ''}
-                            className="flex-1 px-3 py-2 bg-slate-950 border border-slate-900 focus:outline-none rounded-lg text-xs text-slate-300 font-mono"
-                          />
-                          <button
-                            type="button"
-                            onClick={() => document.getElementById('deliver-file-input')?.click()}
-                            className="px-3 py-2 bg-slate-900 border border-slate-800 hover:border-slate-700 text-slate-300 hover:text-white rounded-lg font-mono text-[10px] uppercase cursor-pointer"
-                          >
-                            Upload WAV
-                          </button>
+
+                      <div className="p-4 rounded-xl bg-slate-950 border border-slate-900 flex flex-col gap-3">
+                        <div className="flex items-center justify-between">
+                          <div className="space-y-0.5 min-w-0">
+                            <span className="text-[9px] font-mono text-slate-500 uppercase block">ÁUDIO BRUTO RECEBIDO (Celular):</span>
+                            <p className="text-xs text-white truncate font-mono">{pedido.audioName || 'audio_bruto.mp3'}</p>
+                          </div>
+
+                          {pedido.audio_bruto_base64 ? (
+                            <button
+                              onClick={() => downloadBase64File(pedido.audio_bruto_base64 || '', pedido.audioName || 'audio_bruto.mp3')}
+                              className="p-2.5 bg-slate-900 hover:bg-slate-800 border border-slate-800 text-cyan-400 hover:text-cyan-300 rounded-lg transition-colors cursor-pointer shrink-0"
+                              title="Baixar Áudio Bruto"
+                            >
+                              <Download className="h-4 w-4" />
+                            </button>
+                          ) : pedido.audioUrl ? (
+                            <button
+                              onClick={() => downloadBase64File(pedido.audioUrl || '', pedido.audioName || 'audio_bruto.mp3')}
+                              className="p-2.5 bg-slate-900 hover:bg-slate-800 border border-slate-800 text-cyan-400 hover:text-cyan-300 rounded-lg transition-colors cursor-pointer shrink-0"
+                              title="Baixar Áudio Bruto"
+                            >
+                              <Download className="h-4 w-4" />
+                            </button>
+                          ) : (
+                            <button
+                              disabled
+                              className="p-2.5 bg-slate-900/50 border border-slate-950 text-slate-600 rounded-lg shrink-0 cursor-not-allowed"
+                              title="Áudio não disponível"
+                            >
+                              <Download className="h-4 w-4" />
+                            </button>
+                          )}
                         </div>
 
-                        {isUploading && (
-                          <div className="space-y-1">
-                            <div className="flex justify-between text-[10px] font-mono text-cyan-400">
-                              <span>Enviando guia final...</span>
-                              <span>{uploadProgress}%</span>
-                            </div>
-                            <div className="w-full bg-slate-900 h-1.5 rounded-full overflow-hidden">
-                              <div className="bg-cyan-500 h-full transition-all duration-300" style={{ width: `${uploadProgress}%` }} />
-                            </div>
+                        {/* Common HTML5 Audio Player */}
+                        {pedido.audio_bruto_base64 ? (
+                          <div className="pt-2 border-t border-slate-900">
+                            <audio 
+                              controls 
+                              src={'data:audio/mp3;base64,' + pedido.audio_bruto_base64} 
+                              className="w-full h-8 rounded-lg bg-slate-900 text-cyan-400 mt-2"
+                            />
                           </div>
+                        ) : pedido.audioUrl ? (
+                          <div className="pt-2 border-t border-slate-900">
+                            <audio 
+                              controls 
+                              src={pedido.audioUrl.startsWith('data:') ? pedido.audioUrl : 'data:audio/mp3;base64,' + pedido.audioUrl} 
+                              className="w-full h-8 rounded-lg bg-slate-900 text-cyan-400 mt-2"
+                            />
+                          </div>
+                        ) : (
+                          <p className="text-[10px] text-slate-600 italic">Áudio bruto não disponível</p>
                         )}
-
-                        <button
-                          type="button"
-                          disabled={isUploading || !deliverFileObj}
-                          onClick={() => handleDeliverGuide(selectedComp.id)}
-                          className={`w-full py-3 font-extrabold font-mono text-xs uppercase tracking-wider rounded-xl transition-all flex items-center justify-center gap-1.5 ${
-                            isUploading || !deliverFileObj
-                              ? 'bg-slate-800 text-slate-500 border border-slate-700 cursor-not-allowed'
-                              : 'bg-[#00ff87] hover:bg-[#00e076] text-black shadow-[0_4px_15px_rgba(0,255,135,0.1)] cursor-pointer'
-                          }`}
-                        >
-                          <Upload className="h-4 w-4" />
-                          <span>{isUploading ? 'ENVIANDO...' : '[ 📤 Entregar Guia Concluída ]'}</span>
-                        </button>
                       </div>
-                    )}
+                    </div>
+
+                    {/* Delivery Input Area */}
+                    <div className="space-y-3 pt-4 border-t border-slate-900/60">
+                      <label className="block text-[10px] font-mono text-slate-400 font-bold uppercase">
+                        Entrega da Guia Acústica Final (WAV)
+                      </label>
+
+                      {pedido.status === 'Concluída' || pedido.status === 'Concluído' ? (
+                        <div className="p-3.5 bg-emerald-500/5 border border-emerald-500/15 rounded-xl space-y-1.5 text-center">
+                          <p className="text-xs text-[#00ff87] font-bold">✓ GUIA CONCLUÍDA E ENTREGUE</p>
+                          <p className="text-[10px] text-slate-400 font-mono break-all">{pedido.finalAudioUrl}</p>
+                        </div>
+                      ) : (
+                        <div className="space-y-2.5">
+                          <div className="flex gap-2">
+                            <input
+                              type="file"
+                              accept="audio/*"
+                              id="deliver-file-input"
+                              className="hidden"
+                              onChange={(e) => {
+                                if (e.target.files && e.target.files[0]) {
+                                  const file = e.target.files[0];
+                                  setDeliverFileObj(file);
+                                  setUploadedDeliverFile(file.name);
+                                  showToast(`Áudio selecionado: ${file.name}`);
+                                }
+                              }}
+                            />
+                            <input
+                              type="text"
+                              placeholder="Escolha o arquivo WAV da guia final..."
+                              readOnly
+                              value={uploadedDeliverFile || ''}
+                              className="flex-1 px-3 py-2 bg-slate-950 border border-slate-900 focus:outline-none rounded-lg text-xs text-slate-300 font-mono"
+                            />
+                            <button
+                              type="button"
+                              onClick={() => document.getElementById('deliver-file-input')?.click()}
+                              className="px-3 py-2 bg-slate-900 border border-slate-800 hover:border-slate-700 text-slate-300 hover:text-white rounded-lg font-mono text-[10px] uppercase cursor-pointer"
+                            >
+                              Upload WAV
+                            </button>
+                          </div>
+
+                          {isUploading && (
+                            <div className="space-y-1">
+                              <div className="flex justify-between text-[10px] font-mono text-cyan-400">
+                                <span>Enviando guia final...</span>
+                                <span>{uploadProgress}%</span>
+                              </div>
+                              <div className="w-full bg-slate-900 h-1.5 rounded-full overflow-hidden">
+                                <div className="bg-cyan-500 h-full transition-all duration-300" style={{ width: `${uploadProgress}%` }} />
+                              </div>
+                            </div>
+                          )}
+
+                          <button
+                            type="button"
+                            disabled={isUploading || !deliverFileObj}
+                            onClick={() => handleDeliverGuide(pedido.id)}
+                            className={`w-full py-3 font-extrabold font-mono text-xs uppercase tracking-wider rounded-xl transition-all flex items-center justify-center gap-1.5 ${
+                              isUploading || !deliverFileObj
+                                ? 'bg-slate-800 text-slate-500 border border-slate-700 cursor-not-allowed'
+                                : 'bg-[#00ff87] hover:bg-[#00e076] text-black shadow-[0_4px_15px_rgba(0,255,135,0.1)] cursor-pointer'
+                            }`}
+                          >
+                            <Upload className="h-4 w-4" />
+                            <span>{isUploading ? 'ENVIANDO...' : '[ 📤 Entregar Guia Concluída ]'}</span>
+                          </button>
+                        </div>
+                      )}
+
+                    </div>
 
                   </div>
 
                 </div>
 
-              </div>
-
-            </motion.div>
-          </div>
-        )}
+              </motion.div>
+            </div>
+          );
+        })()}
       </AnimatePresence>
 
     </div>
