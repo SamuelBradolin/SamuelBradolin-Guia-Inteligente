@@ -1,6 +1,8 @@
 import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { X, Mail, Lock, Sparkles } from 'lucide-react';
+import { X, Mail, Lock, Sparkles, AlertCircle } from 'lucide-react';
+import { signInWithEmailAndPassword } from 'firebase/auth';
+import { auth } from '../firebase';
 
 interface LoginModalProps {
   isOpen: boolean;
@@ -14,24 +16,41 @@ export default function LoginModal({ isOpen, onClose, onSwitchToRegister, onLogi
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [loginSuccess, setLoginSuccess] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!email || !password) return;
 
     setLoading(true);
-    // Simulate API authorization response
-    setTimeout(() => {
+    setError(null);
+
+    try {
+      const userCredential = await signInWithEmailAndPassword(auth, email, password);
       setLoading(false);
       setLoginSuccess(true);
+      
       setTimeout(() => {
         setLoginSuccess(false);
         onClose();
         if (onLoginSuccess) {
-          onLoginSuccess(email);
+          onLoginSuccess(userCredential.user.email || email);
         }
-      }, 1800);
-    }, 1200);
+      }, 1000);
+    } catch (err: any) {
+      console.error("Firebase Login Error:", err);
+      setLoading(false);
+      
+      let friendlyMessage = 'Falha ao autenticar. Verifique suas credenciais.';
+      if (err.code === 'auth/wrong-password' || err.code === 'auth/user-not-found' || err.code === 'auth/invalid-credential') {
+        friendlyMessage = 'E-mail ou senha incorretos. Verifique suas credenciais e tente novamente.';
+      } else if (err.code === 'auth/invalid-email') {
+        friendlyMessage = 'O e-mail inserido é inválido.';
+      } else if (err.code === 'auth/too-many-requests') {
+        friendlyMessage = 'Muitas tentativas malsucedidas. Tente novamente mais tarde.';
+      }
+      setError(friendlyMessage);
+    }
   };
 
   const handleForgotPassword = (e: React.MouseEvent) => {
@@ -86,11 +105,14 @@ export default function LoginModal({ isOpen, onClose, onSwitchToRegister, onLogi
                     <p className="text-xs text-slate-400 mt-1.5 leading-relaxed">
                       Insira suas credenciais para acompanhar suas guias acústicas.
                     </p>
-                    <div className="mt-3 inline-flex items-center gap-1.5 px-3 py-1 rounded-lg bg-[#00ff87]/5 border border-[#00ff87]/15 text-[#00ff87] text-[10px] font-mono leading-tight">
-                      <Sparkles className="h-3 w-3 animate-pulse text-[#00ff87]" />
-                      <span>Dica: Digite qualquer e-mail contendo <strong className="text-white">"admin"</strong> para testar o Painel de Produção!</span>
-                    </div>
                   </div>
+
+                  {error && (
+                    <div className="p-3 bg-red-500/10 border border-red-500/20 text-red-400 rounded-xl text-xs flex items-start gap-2.5">
+                      <AlertCircle className="h-4 w-4 shrink-0 mt-0.5" />
+                      <span>{error}</span>
+                    </div>
+                  )}
 
                   <div className="space-y-4">
                     {/* E-mail Field */}

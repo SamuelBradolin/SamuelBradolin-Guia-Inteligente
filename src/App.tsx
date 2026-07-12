@@ -15,6 +15,11 @@ import LoginModal from './components/LoginModal';
 import Dashboard from './components/Dashboard';
 import AdminDashboard from './components/AdminDashboard';
 
+// Firebase Authentication and Firestore
+import { onAuthStateChanged, signOut } from 'firebase/auth';
+import { doc, getDoc, setDoc } from 'firebase/firestore';
+import { auth, db } from './firebase';
+
 export default function App() {
   const [isWizardOpen, setIsWizardOpen] = useState(false);
   const [isLoginOpen, setIsLoginOpen] = useState(false);
@@ -29,6 +34,9 @@ export default function App() {
   const [isAdminView, setIsAdminView] = useState(() => {
     return localStorage.getItem('gi_is_admin_view') === 'true';
   });
+  const [userRole, setUserRole] = useState<'cliente' | 'admin' | 'produtor' | null>(() => {
+    return (localStorage.getItem('gi_user_role') as any) || null;
+  });
 
   // Track the current URL pathname for routing
   const [currentPath, setCurrentPath] = useState(window.location.pathname);
@@ -39,6 +47,85 @@ export default function App() {
     };
     window.addEventListener('popstate', handlePopState);
     return () => window.removeEventListener('popstate', handlePopState);
+  }, []);
+
+  // Firebase Auth State Observer
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, async (user) => {
+      if (user) {
+        setUserEmail(user.email || '');
+        
+        try {
+          const userDocRef = doc(db, 'usuarios', user.uid);
+          const docSnap = await getDoc(userDocRef);
+          
+          if (docSnap.exists()) {
+            const data = docSnap.data();
+            const role = data.role || 'cliente';
+            setUserRole(role);
+            setIsLoggedIn(true);
+            
+            localStorage.setItem('gi_logged_in', 'true');
+            localStorage.setItem('gi_user_email', user.email || '');
+            localStorage.setItem('gi_user_role', role);
+            
+            const isProd = role === 'admin' || role === 'produtor';
+            setIsAdminView(isProd);
+            localStorage.setItem('gi_is_admin_view', isProd ? 'true' : 'false');
+          } else {
+            // If user doc doesn't exist yet, check email for admin fallback or default to cliente
+            const isEmailAdmin = (user.email || '').toLowerCase().includes('admin');
+            const role: 'cliente' | 'admin' | 'produtor' = isEmailAdmin ? 'admin' : 'cliente';
+            
+            // Auto-create document for consistency
+            await setDoc(userDocRef, {
+              uid: user.uid,
+              nome: user.displayName || user.email?.split('@')[0] || 'Compositor',
+              email: user.email,
+              role: role,
+              createdAt: new Date().toISOString()
+            });
+
+            setUserRole(role);
+            setIsLoggedIn(true);
+            
+            localStorage.setItem('gi_logged_in', 'true');
+            localStorage.setItem('gi_user_email', user.email || '');
+            localStorage.setItem('gi_user_role', role);
+            
+            const isProd = (role as string) === 'admin' || (role as string) === 'produtor';
+            setIsAdminView(isProd);
+            localStorage.setItem('gi_is_admin_view', isProd ? 'true' : 'false');
+          }
+        } catch (error) {
+          console.error("Error fetching user role from firestore:", error);
+          const isEmailAdmin = (user.email || '').toLowerCase().includes('admin');
+          const role: 'cliente' | 'admin' | 'produtor' = isEmailAdmin ? 'admin' : 'cliente';
+          setUserRole(role);
+          setIsLoggedIn(true);
+          
+          localStorage.setItem('gi_logged_in', 'true');
+          localStorage.setItem('gi_user_email', user.email || '');
+          localStorage.setItem('gi_user_role', role);
+          
+          const isProd = (role as string) === 'admin' || (role as string) === 'produtor';
+          setIsAdminView(isProd);
+          localStorage.setItem('gi_is_admin_view', isProd ? 'true' : 'false');
+        }
+      } else {
+        setUserEmail('');
+        setUserRole(null);
+        setIsLoggedIn(false);
+        setIsAdminView(false);
+        
+        localStorage.removeItem('gi_logged_in');
+        localStorage.removeItem('gi_user_email');
+        localStorage.removeItem('gi_user_role');
+        localStorage.removeItem('gi_is_admin_view');
+      }
+    });
+
+    return () => unsubscribe();
   }, []);
 
   const navigateTo = (path: string) => {
@@ -59,29 +146,20 @@ export default function App() {
   const closeLogin = () => setIsLoginOpen(false);
 
   const handleLoginSuccess = (email: string) => {
-    setUserEmail(email);
-    setIsLoggedIn(true);
-    localStorage.setItem('gi_logged_in', 'true');
-    localStorage.setItem('gi_user_email', email);
-
-    if (email.toLowerCase().includes('admin')) {
-      setIsAdminView(true);
-      localStorage.setItem('gi_is_admin_view', 'true');
+    const isEmailAdmin = email.toLowerCase().includes('admin');
+    if (isEmailAdmin || userRole === 'admin' || userRole === 'produtor') {
       navigateTo('/produtor');
     } else {
-      setIsAdminView(false);
-      localStorage.setItem('gi_is_admin_view', 'false');
       navigateTo('/cliente');
     }
   };
 
-  const handleLogout = () => {
-    setIsLoggedIn(false);
-    setUserEmail('');
-    setIsAdminView(false);
-    localStorage.removeItem('gi_logged_in');
-    localStorage.removeItem('gi_user_email');
-    localStorage.removeItem('gi_is_admin_view');
+  const handleLogout = async () => {
+    try {
+      await signOut(auth);
+    } catch (err) {
+      console.error("Error during logout:", err);
+    }
     navigateTo('/');
   };
 
@@ -92,8 +170,10 @@ export default function App() {
   // 1. Route Resolution Engine
   let viewToRender: 'home' | 'client' | 'admin' = 'home';
   
+  const isUserAdmin = isLoggedIn && (userRole === 'admin' || userRole === 'produtor' || userEmail.toLowerCase().includes('admin'));
+
   if (currentPath === '/produtor' || currentPath === '/admin') {
-    if (isLoggedIn && userEmail.toLowerCase().includes('admin')) {
+    if (isUserAdmin) {
       viewToRender = 'admin';
     } else if (isLoggedIn) {
       // Normal user trying to access admin - redirect to client dashboard
@@ -109,7 +189,7 @@ export default function App() {
     }
   } else if (currentPath === '/cliente' || currentPath === '/dashboard') {
     if (isLoggedIn) {
-      if (userEmail.toLowerCase().includes('admin')) {
+      if (isUserAdmin) {
         viewToRender = 'admin';
         window.history.replaceState({}, '', '/produtor');
         setTimeout(() => setCurrentPath('/produtor'), 0);
@@ -131,7 +211,7 @@ export default function App() {
   return (
     <div className="min-h-screen bg-[#0f1115] font-sans text-slate-200 flex flex-col selection:bg-[#00ff87]/30 selection:text-[#00ff87]">
       {/* Admin utility bar at the top */}
-      {isLoggedIn && userEmail.toLowerCase().includes('admin') && (
+      {isUserAdmin && (
         <div className="bg-[#00ff87]/15 border-b border-[#00ff87]/30 px-6 py-2.5 flex items-center justify-between text-xs font-mono relative z-50 shadow-md">
           <div className="flex items-center gap-2 text-white">
             <span className="h-2 w-2 rounded-full bg-[#00ff87] animate-pulse"></span>
@@ -162,7 +242,7 @@ export default function App() {
         onLogout={handleLogout}
         onBackToHome={handleBackToHome}
         onGoToPanel={() => {
-          if (userEmail.toLowerCase().includes('admin')) {
+          if (isUserAdmin) {
             navigateTo('/produtor');
           } else {
             navigateTo('/cliente');

@@ -45,27 +45,19 @@ export default function Dashboard({ userEmail, onLogout }: DashboardProps) {
   // Synchronizer with Firestore database
   useEffect(() => {
     // 1. Sync User Info
-    const cachedUsers = localStorage.getItem('gi_users');
-    let usersList = cachedUsers ? JSON.parse(cachedUsers) : [];
-    
-    let currentUser = usersList.find((u: any) => u.email === userEmail);
-    if (!currentUser) {
-      currentUser = {
-        id: `usr-${Date.now()}`,
-        name: userEmail.split('@')[0].toUpperCase(),
-        email: userEmail,
-        credits: 1, // Start with 1 free credit!
-        activeDiscount: 0,
-        isCompositorPro: userEmail.includes('admin') || userEmail === 'roberto@email.com' || userEmail === 'bruno@email.com'
-      };
-      usersList.push(currentUser);
-      localStorage.setItem('gi_users', JSON.stringify(usersList));
-    }
-    
-    setComposerName(currentUser.name);
-    setCredits(currentUser.credits);
-    setActiveDiscount(currentUser.activeDiscount || 0);
-    setIsCompositorPro(currentUser.isCompositorPro || false);
+    const qUser = query(collection(db, 'usuarios'), where('email', '==', userEmail));
+    const unsubscribeUser = onSnapshot(qUser, (snapshot) => {
+      if (!snapshot.empty) {
+        const userDoc = snapshot.docs[0];
+        const data = userDoc.data();
+        setComposerName(data.nome || data.name || userEmail.split('@')[0].toUpperCase());
+        setCredits(data.credits !== undefined ? data.credits : 1);
+        setActiveDiscount(data.activeDiscount || 0);
+        setIsCompositorPro(data.role === 'admin' || data.role === 'produtor');
+      } else {
+        setComposerName(userEmail.split('@')[0].toUpperCase());
+      }
+    });
 
     // 2. Sync Compositions from Firestore Collection (pedidos)
     const q = query(
@@ -102,7 +94,10 @@ export default function Dashboard({ userEmail, onLogout }: DashboardProps) {
     const myPrivates = privateList.filter((p: any) => p.email === userEmail);
     setPrivateNotices(myPrivates);
 
-    return () => unsubscribeComps();
+    return () => {
+      unsubscribeComps();
+      unsubscribeUser();
+    };
   }, [userEmail, activeTab]);
 
   // Form states for "Nova Composição"

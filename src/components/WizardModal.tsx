@@ -7,6 +7,9 @@ import {
 } from 'lucide-react';
 import { VoiceGender, SongStyle, CompositionInput, SubmittedOrder } from '../types';
 import { audioSynth } from '../utils/audioSynth';
+import { createUserWithEmailAndPassword } from 'firebase/auth';
+import { doc, setDoc } from 'firebase/firestore';
+import { auth, db } from '../firebase';
 
 interface WizardModalProps {
   isOpen: boolean;
@@ -30,6 +33,8 @@ export default function WizardModal({ isOpen, onClose, onSwitchToLogin }: Wizard
 
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
+  const [registerLoading, setRegisterLoading] = useState(false);
+  const [registerError, setRegisterError] = useState<string | null>(null);
 
   // Microphone recording states
   const [isRecording, setIsRecording] = useState(false);
@@ -183,7 +188,7 @@ export default function WizardModal({ isOpen, onClose, onSwitchToLogin }: Wizard
   };
 
   // Next steps handling
-  const handleStep1Submit = (e: React.FormEvent) => {
+  const handleStep1Submit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (formData.name && formData.email && formData.phone) {
       if (!password || !confirmPassword) {
@@ -194,7 +199,40 @@ export default function WizardModal({ isOpen, onClose, onSwitchToLogin }: Wizard
         alert("As senhas não coincidem. Por favor, digite a mesma senha nos dois campos.");
         return;
       }
-      setStep(2);
+
+      setRegisterLoading(true);
+      setRegisterError(null);
+
+      try {
+        // Create user in Firebase Auth
+        const userCredential = await createUserWithEmailAndPassword(auth, formData.email, password);
+        const user = userCredential.user;
+
+        // Save role: 'cliente' in usuarios collection
+        await setDoc(doc(db, 'usuarios', user.uid), {
+          uid: user.uid,
+          nome: formData.name,
+          email: formData.email,
+          telefone: formData.phone,
+          role: 'cliente',
+          createdAt: new Date().toISOString()
+        });
+
+        setRegisterLoading(false);
+        setStep(2);
+      } catch (err: any) {
+        console.error("Error creating user in Firebase Auth:", err);
+        setRegisterLoading(false);
+        let friendlyMessage = 'Erro ao realizar o cadastro. Tente novamente.';
+        if (err.code === 'auth/email-already-in-use') {
+          friendlyMessage = 'Este e-mail já está cadastrado no sistema.';
+        } else if (err.code === 'auth/weak-password') {
+          friendlyMessage = 'A senha deve conter no mínimo 6 caracteres.';
+        } else if (err.code === 'auth/invalid-email') {
+          friendlyMessage = 'O e-mail inserido é inválido.';
+        }
+        setRegisterError(friendlyMessage);
+      }
     }
   };
 
@@ -329,6 +367,13 @@ export default function WizardModal({ isOpen, onClose, onSwitchToLogin }: Wizard
                   </div>
 
                   <div className="space-y-4">
+                    {registerError && (
+                      <div className="p-3 bg-red-500/10 border border-red-500/20 text-red-400 rounded-xl text-xs flex items-start gap-2.5">
+                        <AlertCircle className="h-4 w-4 shrink-0 mt-0.5" />
+                        <span>{registerError}</span>
+                      </div>
+                    )}
+
                     <div>
                       <label className="block text-xs font-mono text-slate-400 mb-1.5 font-bold uppercase tracking-wide">
                         Nome Completo
@@ -423,17 +468,19 @@ export default function WizardModal({ isOpen, onClose, onSwitchToLogin }: Wizard
                     {onSwitchToLogin && (
                       <button
                         type="button"
+                        disabled={registerLoading}
                         onClick={onSwitchToLogin}
-                        className="text-slate-400 hover:text-[#00ff87] text-xs font-mono transition-colors text-left cursor-pointer"
+                        className="text-slate-400 hover:text-[#00ff87] disabled:text-slate-600 text-xs font-mono transition-colors text-left cursor-pointer"
                       >
-                        Já possui conta? Acesse o Painel
+                        Já possui conta? Acesse o Panel
                       </button>
                     )}
                     <button
                       type="submit"
-                      className="flex items-center justify-center gap-2 py-3 px-6 rounded-xl bg-[#00ff87] hover:bg-[#00e076] text-black font-bold font-mono text-xs uppercase tracking-wider transition-all duration-200 cursor-pointer"
+                      disabled={registerLoading}
+                      className="flex items-center justify-center gap-2 py-3 px-6 rounded-xl bg-[#00ff87] hover:bg-[#00e076] disabled:bg-slate-800 disabled:text-slate-500 text-black font-bold font-mono text-xs uppercase tracking-wider transition-all duration-200 cursor-pointer"
                     >
-                      <span>Prosseguir para Áudio & Letra</span>
+                      <span>{registerLoading ? 'Cadastrando...' : 'Prosseguir para Áudio & Letra'}</span>
                       <ChevronRight className="h-4 w-4" />
                     </button>
                   </div>
