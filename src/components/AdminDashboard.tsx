@@ -7,6 +7,7 @@ import {
   Briefcase, Send, Layers, Award, Radio, TrendingUp, CreditCard, Landmark
 } from 'lucide-react';
 import { db } from '../firebase';
+import { supabase } from '../supabase';
 import { convertAudioToMp3 } from '../utils/audioConverter';
 import { 
   collection, 
@@ -167,7 +168,7 @@ export default function AdminDashboard({ onLogout, onSwitchToClient }: AdminDash
           audio_final_base64: data.audio_final_base64 || '',
           status: data.status || 'Fila de Espera',
           date: data.data || data.date || '',
-          finalAudioUrl: data.audio_final_base64 || data.url_audio_final || data.finalAudioUrl || ''
+          finalAudioUrl: data.audio_final_url || data.audio_final_base64 || data.url_audio_final || data.finalAudioUrl || ''
         });
       });
       setCompositions(list);
@@ -394,40 +395,53 @@ export default function AdminDashboard({ onLogout, onSwitchToClient }: AdminDash
 
     try {
       setIsUploading(true);
-      setUploadProgress(15);
+      setUploadProgress(10);
 
-      // Convert file to compressed MP3
-      setUploadProgress(30);
-      const compressedBlob = await convertAudioToMp3(deliverFileObj);
-      setUploadProgress(60);
+      let progress = 10;
+      const intervalId = setInterval(() => {
+        progress += (95 - progress) * 0.15;
+        setUploadProgress(Math.round(progress));
+      }, 200);
 
-      const audioFinalBase64 = await convertFileToBase64(compressedBlob);
-      setUploadProgress(80);
+      const fileExt = deliverFileObj.name.split('.').pop() || 'wav';
+      const uniqueFileName = `${Date.now()}-${Math.random().toString(36).substring(2, 15)}.${fileExt}`;
+      const filePath = `final_guides/${uniqueFileName}`;
 
-      // Size check (950 KB maximum)
-      if (audioFinalBase64.length > 950000) {
-        alert("Arquivo muito grande. Reduza o tempo do áudio ou use uma qualidade menor.");
-        setIsUploading(false);
-        setUploadProgress(0);
-        return;
+      const { data, error } = await supabase.storage
+        .from('audios')
+        .upload(filePath, deliverFileObj, {
+          cacheControl: '3600',
+          upsert: false
+        });
+
+      clearInterval(intervalId);
+
+      if (error) {
+        throw error;
       }
+
+      const { data: { publicUrl } } = supabase.storage
+        .from('audios')
+        .getPublicUrl(filePath);
+
+      const finalUrl = publicUrl;
+      setUploadProgress(100);
 
       // Update the document in Firestore
       const docRef = doc(db, 'pedidos', compId);
       await updateDoc(docRef, {
         status: 'Concluído',
-        audio_final_base64: audioFinalBase64,
-        url_audio_final: audioFinalBase64, // Compat field
-        finalAudioUrl: audioFinalBase64 // Compat field
+        audio_final_url: finalUrl,
+        url_audio_final: finalUrl, // Compat field
+        finalAudioUrl: finalUrl // Compat field
       });
-      setUploadProgress(95);
 
       showToast(`Guia entregue com sucesso! Status atualizado para Concluído.`);
       setUploadedDeliverFile(null);
       setDeliverFileObj(null);
       setSelectedComp(null);
     } catch (err) {
-      console.error("Error delivering final guide to Firebase:", err);
+      console.error("Error delivering final guide to Supabase/Firestore:", err);
       alert("Erro ao enviar a guia finalizada. Por favor, tente novamente.");
     } finally {
       setIsUploading(false);
@@ -2237,24 +2251,24 @@ export default function AdminDashboard({ onLogout, onSwitchToClient }: AdminDash
                             <p className="text-xs text-white truncate font-mono">{pedido.audioName || 'audio_bruto.mp3'}</p>
                           </div>
 
-                          <button
-                            onClick={() => {
-                              const audioSrc = pedido.audio_bruto_base64 || pedido.audioUrl || '';
-                              downloadBase64File(audioSrc, pedido.audioName || 'audio_bruto.mp3');
-                            }}
-                            className="p-2.5 bg-slate-900 hover:bg-slate-800 border border-slate-800 text-cyan-400 hover:text-cyan-300 rounded-lg transition-colors cursor-pointer shrink-0"
+                          <a
+                            href={pedido.audioUrl || '#'}
+                            download={pedido.audioName || 'audio_bruto.mp3'}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="p-2.5 bg-slate-900 hover:bg-slate-800 border border-slate-800 text-cyan-400 hover:text-cyan-300 rounded-lg transition-colors cursor-pointer shrink-0 flex items-center justify-center"
                             title="Baixar Áudio Bruto"
                           >
                             <Download className="h-4 w-4" />
-                          </button>
+                          </a>
                         </div>
 
                         {/* Common HTML5 Audio Player */}
                         <div className="pt-2 border-t border-slate-900">
                           <audio 
                             controls 
-                            src={pedido.audio_bruto_base64 || pedido.audioUrl || null} 
-                            className="w-full h-8 rounded-lg bg-slate-900 text-cyan-400 mt-2"
+                            src={pedido.audioUrl} 
+                            className="w-full mt-2" 
                           />
                         </div>
                       </div>

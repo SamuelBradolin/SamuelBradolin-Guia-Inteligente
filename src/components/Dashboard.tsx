@@ -8,6 +8,7 @@ import {
 } from 'lucide-react';
 import { collection, query, where, onSnapshot, addDoc, doc, updateDoc, serverTimestamp } from 'firebase/firestore';
 import { db } from '../firebase';
+import { supabase } from '../supabase';
 
 interface GuideItem {
   id: string;
@@ -78,7 +79,7 @@ export default function Dashboard({ userEmail, onLogout }: DashboardProps) {
         status: (c.status === 'Concluído' || c.status === 'Concluída') ? 'Concluída' : (c.status || 'Fila de Espera'),
         genre: c.genre || 'Sertanejo',
         voiceType: c.voiceType || 'Voz Masculina de Estúdio',
-        finalAudioUrl: c.audio_final_base64 || c.url_audio_final || c.finalAudioUrl || c.url_audio_entrega
+        finalAudioUrl: c.audio_final_url || c.audio_final_base64 || c.url_audio_final || c.finalAudioUrl || c.url_audio_entrega
       }));
       setGuides(mappedGuides);
     }, (error) => {
@@ -175,22 +176,6 @@ export default function Dashboard({ userEmail, onLogout }: DashboardProps) {
     }
   };
 
-  const convertFileToBase64 = (file: File | Blob): Promise<string> => {
-    return new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onload = () => {
-        const result = reader.result as string;
-        if (result) {
-          resolve(result);
-        } else {
-          reject(new Error("Erro ao converter arquivo de áudio: resultado vazio do FileReader"));
-        }
-      };
-      reader.onerror = (error) => reject(error);
-      reader.readAsDataURL(file);
-    });
-  };
-
   const handleCreateComposition = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newTitle) {
@@ -204,29 +189,50 @@ export default function Dashboard({ userEmail, onLogout }: DashboardProps) {
 
     if (credits > 0) {
       setIsUploading(true);
-      setUploadProgress(15);
+      setUploadProgress(10);
       
-      let audioBase64 = '';
+      let uploadedAudioUrl = '';
       if (selectedFile) {
         try {
-          setUploadProgress(30);
-          audioBase64 = await convertFileToBase64(selectedFile);
-          
-          // Validação simples de tamanho do Firestore (1MB max = ~1.300.000 caracteres em Base64)
-          if (audioBase64.length > 1300000) {
-            alert("O arquivo de áudio é muito grande. Por favor, envie um arquivo menor ou mais curto.");
-            setIsUploading(false);
-            setUploadProgress(0);
-            return;
+          let progress = 10;
+          const intervalId = setInterval(() => {
+            progress += (95 - progress) * 0.15;
+            setUploadProgress(Math.round(progress));
+          }, 200);
+
+          const fileExt = selectedFile.name.split('.').pop() || 'mp3';
+          const uniqueFileName = `${Date.now()}-${Math.random().toString(36).substring(2, 15)}.${fileExt}`;
+          const filePath = `${userEmail}/${uniqueFileName}`;
+
+          const { data, error } = await supabase.storage
+            .from('audios')
+            .upload(filePath, selectedFile, {
+              cacheControl: '3600',
+              upsert: false
+            });
+
+          clearInterval(intervalId);
+
+          if (error) {
+            throw error;
           }
-          
+
+          const { data: { publicUrl } } = supabase.storage
+            .from('audios')
+            .getPublicUrl(filePath);
+
+          uploadedAudioUrl = publicUrl;
           setUploadProgress(100);
         } catch (uploadErr) {
-          console.error("Error converting audio to Base64:", uploadErr);
+          console.error("Error uploading to Supabase:", uploadErr);
+          alert("Erro ao realizar o upload do áudio para o Supabase. Por favor, tente novamente.");
+          setIsUploading(false);
+          setUploadProgress(0);
+          return;
         }
       }
 
-      if (!audioBase64) {
+      if (!uploadedAudioUrl) {
         alert("Não foi possível processar o áudio. Por favor, tente enviar novamente.");
         setIsUploading(false);
         setUploadProgress(0);
@@ -240,8 +246,8 @@ export default function Dashboard({ userEmail, onLogout }: DashboardProps) {
           nome_musica: newTitle,
           status: 'Fila de Espera',
           data: new Date().toLocaleDateString('pt-BR'),
-          url_audio: audioBase64, // Fallback compatibility
-          audio_bruto_base64: audioBase64,
+          url_audio: uploadedAudioUrl, // Fallback compatibility
+          audio_bruto_base64: '', // No longer using Base64
 
           // Legacy compatible fields
           composerName: composerName,
@@ -254,7 +260,7 @@ export default function Dashboard({ userEmail, onLogout }: DashboardProps) {
           directionDetails: directionDetails,
           partners: partners,
           audioName: fileName || 'audio_composição.mp3',
-          audioUrl: audioBase64,
+          audioUrl: uploadedAudioUrl,
           createdAt: serverTimestamp()
         };
 
@@ -305,29 +311,50 @@ export default function Dashboard({ userEmail, onLogout }: DashboardProps) {
   const handleSimulatePayment = async () => {
     setShowPixModal(false);
     setIsUploading(true);
-    setUploadProgress(15);
+    setUploadProgress(10);
     
-    let audioBase64 = '';
+    let uploadedAudioUrl = '';
     if (selectedFile) {
       try {
-        setUploadProgress(30);
-        audioBase64 = await convertFileToBase64(selectedFile);
-        
-        // Validação simples de tamanho do Firestore (1MB max = ~1.300.000 caracteres em Base64)
-        if (audioBase64.length > 1300000) {
-          alert("O arquivo de áudio é muito grande. Por favor, envie um arquivo menor ou mais curto.");
-          setIsUploading(false);
-          setUploadProgress(0);
-          return;
+        let progress = 10;
+        const intervalId = setInterval(() => {
+          progress += (95 - progress) * 0.15;
+          setUploadProgress(Math.round(progress));
+        }, 200);
+
+        const fileExt = selectedFile.name.split('.').pop() || 'mp3';
+        const uniqueFileName = `${Date.now()}-${Math.random().toString(36).substring(2, 15)}.${fileExt}`;
+        const filePath = `${userEmail}/${uniqueFileName}`;
+
+        const { data, error } = await supabase.storage
+          .from('audios')
+          .upload(filePath, selectedFile, {
+            cacheControl: '3600',
+            upsert: false
+          });
+
+        clearInterval(intervalId);
+
+        if (error) {
+          throw error;
         }
-        
+
+        const { data: { publicUrl } } = supabase.storage
+          .from('audios')
+          .getPublicUrl(filePath);
+
+        uploadedAudioUrl = publicUrl;
         setUploadProgress(100);
       } catch (uploadErr) {
-        console.error("Error converting audio to Base64:", uploadErr);
+        console.error("Error uploading to Supabase:", uploadErr);
+        alert("Erro ao realizar o upload do áudio para o Supabase. Por favor, tente novamente.");
+        setIsUploading(false);
+        setUploadProgress(0);
+        return;
       }
     }
 
-    if (!audioBase64) {
+    if (!uploadedAudioUrl) {
       alert("Não foi possível processar o áudio. Por favor, tente enviar novamente.");
       setIsUploading(false);
       setUploadProgress(0);
@@ -341,8 +368,8 @@ export default function Dashboard({ userEmail, onLogout }: DashboardProps) {
         nome_musica: newTitle || 'Nova Guia Premium',
         status: 'Fila de Espera',
         data: new Date().toLocaleDateString('pt-BR'),
-        url_audio: audioBase64, // Fallback compatibility
-        audio_bruto_base64: audioBase64,
+        url_audio: uploadedAudioUrl, // Fallback compatibility
+        audio_bruto_base64: '', // No longer using Base64
 
         // Legacy compatible fields
         composerName: composerName,
@@ -355,7 +382,7 @@ export default function Dashboard({ userEmail, onLogout }: DashboardProps) {
         directionDetails: directionDetails,
         partners: partners,
         audioName: fileName || 'audio_composição.mp3',
-        audioUrl: audioBase64,
+        audioUrl: uploadedAudioUrl,
         createdAt: serverTimestamp()
       };
 
