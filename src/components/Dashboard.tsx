@@ -180,19 +180,14 @@ export default function Dashboard({ userEmail, onLogout }: DashboardProps) {
     return new Promise((resolve, reject) => {
       const reader = new FileReader();
       reader.onload = () => {
-        let result = reader.result as string;
-        if (!result) {
+        const result = reader.result as string;
+        if (result) {
+          resolve(result);
+        } else {
           reject(new Error("Erro ao converter arquivo de áudio: resultado vazio do FileReader"));
-          return;
         }
-        if (!result.startsWith('data:')) {
-          result = 'data:audio/mp3;base64,' + result;
-        }
-        resolve(result);
       };
-      reader.onerror = (error) => {
-        reject(error);
-      };
+      reader.onerror = (error) => reject(error);
       reader.readAsDataURL(file);
     });
   };
