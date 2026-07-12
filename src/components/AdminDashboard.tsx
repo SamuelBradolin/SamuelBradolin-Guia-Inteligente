@@ -7,6 +7,7 @@ import {
   Briefcase, Send, Layers, Award, Radio, TrendingUp, CreditCard, Landmark
 } from 'lucide-react';
 import { db } from '../firebase';
+import { convertAudioToMp3 } from '../utils/audioConverter';
 import { 
   collection, 
   addDoc, 
@@ -327,10 +328,21 @@ export default function AdminDashboard({ onLogout, onSwitchToClient }: AdminDash
       setIsUploading(true);
       setUploadProgress(15);
 
-      // Convert file to Base64
-      setUploadProgress(40);
-      const audioFinalBase64 = await convertFileToBase64(deliverFileObj);
+      // Convert file to compressed MP3
+      setUploadProgress(30);
+      const compressedBlob = await convertAudioToMp3(deliverFileObj);
+      setUploadProgress(60);
+
+      const audioFinalBase64 = await convertFileToBase64(compressedBlob);
       setUploadProgress(80);
+
+      // Size check (950 KB maximum)
+      if (audioFinalBase64.length > 950000) {
+        alert("Arquivo muito grande. Reduza o tempo do áudio ou use uma qualidade menor.");
+        setIsUploading(false);
+        setUploadProgress(0);
+        return;
+      }
 
       // Update the document in Firestore
       const docRef = doc(db, 'pedidos', compId);

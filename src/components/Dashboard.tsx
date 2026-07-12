@@ -8,6 +8,7 @@ import {
 } from 'lucide-react';
 import { collection, query, where, onSnapshot, addDoc, doc, updateDoc, serverTimestamp } from 'firebase/firestore';
 import { db } from '../firebase';
+import { convertAudioToMp3 } from '../utils/audioConverter';
 
 interface GuideItem {
   id: string;
@@ -202,9 +203,19 @@ export default function Dashboard({ userEmail, onLogout }: DashboardProps) {
       let audioBase64 = '';
       if (selectedFile) {
         try {
-          setUploadProgress(40);
-          audioBase64 = await convertFileToBase64(selectedFile);
+          setUploadProgress(30);
+          const compressedBlob = await convertAudioToMp3(selectedFile);
+          setUploadProgress(60);
+          audioBase64 = await convertFileToBase64(compressedBlob);
           setUploadProgress(75);
+
+          // Size check (950 KB maximum)
+          if (audioBase64.length > 950000) {
+            alert("Arquivo muito grande. Reduza o tempo do áudio ou use uma qualidade menor.");
+            setIsUploading(false);
+            setUploadProgress(0);
+            return;
+          }
         } catch (uploadErr) {
           console.error("Error converting audio to Base64:", uploadErr);
         }
@@ -288,9 +299,19 @@ export default function Dashboard({ userEmail, onLogout }: DashboardProps) {
     let audioBase64 = '';
     if (selectedFile) {
       try {
-        setUploadProgress(40);
-        audioBase64 = await convertFileToBase64(selectedFile);
+        setUploadProgress(30);
+        const compressedBlob = await convertAudioToMp3(selectedFile);
+        setUploadProgress(60);
+        audioBase64 = await convertFileToBase64(compressedBlob);
         setUploadProgress(75);
+
+        // Size check (950 KB maximum)
+        if (audioBase64.length > 950000) {
+          alert("Arquivo muito grande. Reduza o tempo do áudio ou use uma qualidade menor.");
+          setIsUploading(false);
+          setUploadProgress(0);
+          return;
+        }
       } catch (uploadErr) {
         console.error("Error converting audio to Base64:", uploadErr);
       }
