@@ -6,7 +6,7 @@ import {
   CheckCircle, Eye, Volume2, Copy, Play, Pause, DollarSign,
   Briefcase, Send, Layers, Award, Radio, TrendingUp, CreditCard, Landmark
 } from 'lucide-react';
-import { db, storage } from '../firebase';
+import { db } from '../firebase';
 import { 
   collection, 
   addDoc, 
@@ -20,7 +20,6 @@ import {
   setDoc,
   getDoc
 } from 'firebase/firestore';
-import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 
 interface AdminDashboardProps {
   onLogout: () => void;
@@ -40,6 +39,8 @@ interface CompositionItem {
   partners?: string;
   audioName?: string;
   audioUrl?: string;
+  audio_bruto_base64?: string;
+  audio_final_base64?: string;
   status: string;
   date: string;
   finalAudioUrl?: string;
@@ -160,10 +161,12 @@ export default function AdminDashboard({ onLogout, onSwitchToClient }: AdminDash
           directionDetails: data.directionDetails || '',
           partners: data.partners || '',
           audioName: data.audioName || '',
-          audioUrl: data.url_audio || data.audioUrl || '',
+          audioUrl: data.audio_bruto_base64 || data.url_audio || data.audioUrl || '',
+          audio_bruto_base64: data.audio_bruto_base64 || '',
+          audio_final_base64: data.audio_final_base64 || '',
           status: data.status || 'Fila de Espera',
           date: data.data || data.date || '',
-          finalAudioUrl: data.url_audio_final || data.finalAudioUrl || ''
+          finalAudioUrl: data.audio_final_base64 || data.url_audio_final || data.finalAudioUrl || ''
         });
       });
       setCompositions(list);
@@ -304,6 +307,15 @@ export default function AdminDashboard({ onLogout, onSwitchToClient }: AdminDash
     localStorage.setItem('gi_home_demos', JSON.stringify(newDemos));
   };
 
+  const convertFileToBase64 = (file: File | Blob): Promise<string> => {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.readAsDataURL(file);
+      reader.onload = () => resolve(reader.result as string);
+      reader.onerror = (error) => reject(error);
+    });
+  };
+
   // ACTION 1: Deliver Concluded Guide
   const handleDeliverGuide = async (compId: string) => {
     if (!deliverFileObj) {
@@ -313,27 +325,22 @@ export default function AdminDashboard({ onLogout, onSwitchToClient }: AdminDash
 
     try {
       setIsUploading(true);
-      setUploadProgress(10);
+      setUploadProgress(15);
 
-      // Create a reference to the delivered files folder in Storage
-      const fileRef = ref(storage, `audios_entregues/${Date.now()}_${deliverFileObj.name}`);
-      setUploadProgress(35);
-
-      // Upload file to Storage
-      const uploadResult = await uploadBytes(fileRef, deliverFileObj);
-      setUploadProgress(70);
-
-      // Get downloadable URL
-      const finalWavUrl = await getDownloadURL(uploadResult.ref);
-      setUploadProgress(90);
+      // Convert file to Base64
+      setUploadProgress(40);
+      const audioFinalBase64 = await convertFileToBase64(deliverFileObj);
+      setUploadProgress(80);
 
       // Update the document in Firestore
       const docRef = doc(db, 'pedidos', compId);
       await updateDoc(docRef, {
         status: 'Concluído',
-        url_audio_final: finalWavUrl,
-        finalAudioUrl: finalWavUrl // Compat field
+        audio_final_base64: audioFinalBase64,
+        url_audio_final: audioFinalBase64, // Compat field
+        finalAudioUrl: audioFinalBase64 // Compat field
       });
+      setUploadProgress(95);
 
       showToast(`Guia entregue com sucesso! Status atualizado para Concluído.`);
       setUploadedDeliverFile(null);
@@ -2141,21 +2148,68 @@ export default function AdminDashboard({ onLogout, onSwitchToClient }: AdminDash
                       </p>
                     </div>
 
-                    <div className="p-4 rounded-xl bg-slate-950 border border-slate-900 flex items-center justify-between">
-                      <div className="space-y-0.5 min-w-0">
-                        <span className="text-[9px] font-mono text-slate-500 uppercase block">ÁUDIO BRUTO RECEBIDO (Celular):</span>
-                        <p className="text-xs text-white truncate font-mono">{selectedComp.audioName || 'audio_bruto.mp3'}</p>
+                    <div className="p-4 rounded-xl bg-slate-950 border border-slate-900 flex flex-col gap-3">
+                      <div className="flex items-center justify-between">
+                        <div className="space-y-0.5 min-w-0">
+                          <span className="text-[9px] font-mono text-slate-500 uppercase block">ÁUDIO BRUTO RECEBIDO (Celular):</span>
+                          <p className="text-xs text-white truncate font-mono">{selectedComp.audioName || 'audio_bruto.mp3'}</p>
+                        </div>
+
+                        {selectedComp.audio_bruto_base64 ? (
+                          <a
+                            href={selectedComp.audio_bruto_base64}
+                            download={selectedComp.audioName || 'audio_bruto.wav'}
+                            onClick={() => {
+                              showToast(`Iniciando download do áudio bruto: ${selectedComp.audioName}`);
+                            }}
+                            className="p-2.5 bg-slate-900 hover:bg-slate-800 border border-slate-800 text-cyan-400 hover:text-cyan-300 rounded-lg transition-colors cursor-pointer shrink-0"
+                            title="Baixar Áudio Bruto"
+                          >
+                            <Download className="h-4 w-4" />
+                          </a>
+                        ) : selectedComp.audioUrl ? (
+                          <a
+                            href={selectedComp.audioUrl}
+                            download={selectedComp.audioName || 'audio_bruto.wav'}
+                            onClick={() => {
+                              showToast(`Iniciando download do áudio bruto: ${selectedComp.audioName}`);
+                            }}
+                            className="p-2.5 bg-slate-900 hover:bg-slate-800 border border-slate-800 text-cyan-400 hover:text-cyan-300 rounded-lg transition-colors cursor-pointer shrink-0"
+                            title="Baixar Áudio Bruto"
+                          >
+                            <Download className="h-4 w-4" />
+                          </a>
+                        ) : (
+                          <button
+                            disabled
+                            className="p-2.5 bg-slate-900/50 border border-slate-950 text-slate-600 rounded-lg shrink-0 cursor-not-allowed"
+                            title="Áudio não disponível"
+                          >
+                            <Download className="h-4 w-4" />
+                          </button>
+                        )}
                       </div>
 
-                      <button
-                        onClick={() => {
-                          showToast(`Iniciando download do áudio bruto: ${selectedComp.audioName}`);
-                        }}
-                        className="p-2.5 bg-slate-900 hover:bg-slate-800 border border-slate-800 text-cyan-400 hover:text-cyan-300 rounded-lg transition-colors cursor-pointer shrink-0"
-                        title="Baixar Áudio Bruto"
-                      >
-                        <Download className="h-4 w-4" />
-                      </button>
+                      {/* Common HTML5 Audio Player */}
+                      {selectedComp.audio_bruto_base64 ? (
+                        <div className="pt-2 border-t border-slate-900">
+                          <audio 
+                            controls 
+                            src={selectedComp.audio_bruto_base64} 
+                            className="w-full h-8 rounded-lg bg-slate-900 text-cyan-400"
+                          />
+                        </div>
+                      ) : selectedComp.audioUrl ? (
+                        <div className="pt-2 border-t border-slate-900">
+                          <audio 
+                            controls 
+                            src={selectedComp.audioUrl} 
+                            className="w-full h-8 rounded-lg bg-slate-900 text-cyan-400"
+                          />
+                        </div>
+                      ) : (
+                        <p className="text-[10px] text-slate-600 italic">Áudio bruto não disponível</p>
+                      )}
                     </div>
                   </div>
 

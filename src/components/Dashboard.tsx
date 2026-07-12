@@ -7,8 +7,7 @@ import {
   Plus, Camera
 } from 'lucide-react';
 import { collection, query, where, onSnapshot, addDoc, doc, updateDoc, serverTimestamp } from 'firebase/firestore';
-import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
-import { db, storage } from '../firebase';
+import { db } from '../firebase';
 
 interface GuideItem {
   id: string;
@@ -79,7 +78,7 @@ export default function Dashboard({ userEmail, onLogout }: DashboardProps) {
         status: c.status || 'Fila de Espera',
         genre: c.genre || 'Sertanejo',
         voiceType: c.voiceType || 'Voz Masculina de Estúdio',
-        finalAudioUrl: c.url_audio_final || c.finalAudioUrl || c.url_audio_entrega
+        finalAudioUrl: c.audio_final_base64 || c.url_audio_final || c.finalAudioUrl || c.url_audio_entrega
       }));
       setGuides(mappedGuides);
     }, (error) => {
@@ -176,6 +175,15 @@ export default function Dashboard({ userEmail, onLogout }: DashboardProps) {
     }
   };
 
+  const convertFileToBase64 = (file: File | Blob): Promise<string> => {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.readAsDataURL(file);
+      reader.onload = () => resolve(reader.result as string);
+      reader.onerror = (error) => reject(error);
+    });
+  };
+
   const handleCreateComposition = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newTitle) {
@@ -191,28 +199,27 @@ export default function Dashboard({ userEmail, onLogout }: DashboardProps) {
       setIsUploading(true);
       setUploadProgress(15);
       
-      let audioUrl = 'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3';
+      let audioBase64 = '';
       if (selectedFile) {
         try {
-          const fileRef = ref(storage, `audios_brutos/${Date.now()}_${selectedFile.name}`);
           setUploadProgress(40);
-          const uploadResult = await uploadBytes(fileRef, selectedFile);
-          setUploadProgress(80);
-          audioUrl = await getDownloadURL(uploadResult.ref);
-          setUploadProgress(95);
+          audioBase64 = await convertFileToBase64(selectedFile);
+          setUploadProgress(75);
         } catch (uploadErr) {
-          console.error("Firebase Storage Upload Error, falling back to simulated audio:", uploadErr);
+          console.error("Error converting audio to Base64:", uploadErr);
         }
       }
 
       try {
+        setUploadProgress(85);
         const newCompObj = {
           // Explicitly requested schema fields
           id_cliente: userEmail,
           nome_musica: newTitle,
           status: 'Fila de Espera',
           data: new Date().toLocaleDateString('pt-BR'),
-          url_audio: audioUrl,
+          url_audio: audioBase64, // Fallback compatibility
+          audio_bruto_base64: audioBase64,
 
           // Legacy compatible fields
           composerName: composerName,
@@ -225,11 +232,12 @@ export default function Dashboard({ userEmail, onLogout }: DashboardProps) {
           directionDetails: directionDetails,
           partners: partners,
           audioName: fileName || 'audio_composição.mp3',
-          audioUrl: audioUrl,
+          audioUrl: audioBase64,
           createdAt: serverTimestamp()
         };
 
         await addDoc(collection(db, 'pedidos'), newCompObj);
+        setUploadProgress(100);
 
         // Deduct credits locally in profile
         const newCredits = credits - 1;
@@ -277,27 +285,27 @@ export default function Dashboard({ userEmail, onLogout }: DashboardProps) {
     setIsUploading(true);
     setUploadProgress(15);
     
-    let audioUrl = 'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3';
+    let audioBase64 = '';
     if (selectedFile) {
       try {
-        const fileRef = ref(storage, `audios_brutos/${Date.now()}_${selectedFile.name}`);
-        setUploadProgress(50);
-        const uploadResult = await uploadBytes(fileRef, selectedFile);
-        audioUrl = await getDownloadURL(uploadResult.ref);
-        setUploadProgress(85);
+        setUploadProgress(40);
+        audioBase64 = await convertFileToBase64(selectedFile);
+        setUploadProgress(75);
       } catch (uploadErr) {
-        console.error("Firebase Storage Simulation Upload Error:", uploadErr);
+        console.error("Error converting audio to Base64:", uploadErr);
       }
     }
 
     try {
+      setUploadProgress(85);
       const newCompObj = {
         // Explicitly requested schema fields
         id_cliente: userEmail,
         nome_musica: newTitle || 'Nova Guia Premium',
         status: 'Fila de Espera',
         data: new Date().toLocaleDateString('pt-BR'),
-        url_audio: audioUrl,
+        url_audio: audioBase64, // Fallback compatibility
+        audio_bruto_base64: audioBase64,
 
         // Legacy compatible fields
         composerName: composerName,
@@ -310,11 +318,12 @@ export default function Dashboard({ userEmail, onLogout }: DashboardProps) {
         directionDetails: directionDetails,
         partners: partners,
         audioName: fileName || 'audio_composição.mp3',
-        audioUrl: audioUrl,
+        audioUrl: audioBase64,
         createdAt: serverTimestamp()
       };
 
       await addDoc(collection(db, 'pedidos'), newCompObj);
+      setUploadProgress(100);
 
       // Save transaction to Firestore
       const discount = activeDiscount || 0;
@@ -969,7 +978,7 @@ export default function Dashboard({ userEmail, onLogout }: DashboardProps) {
                 <div className="pt-4 border-t border-slate-900 flex flex-col gap-4">
                   {isUploading && (
                     <div className="p-4 bg-slate-950 border border-slate-900 rounded-xl space-y-2 text-center text-xs font-mono">
-                      <div className="text-cyan-400 font-bold animate-pulse">📤 Enviando áudio bruto para o Firebase Storage... {uploadProgress}%</div>
+                      <div className="text-cyan-400 font-bold animate-pulse">📤 Processando e enviando áudio para o Firestore... {uploadProgress}%</div>
                       <div className="w-full bg-slate-900 h-2 rounded-full overflow-hidden">
                         <div className="bg-[#00ff87] h-full transition-all duration-300" style={{ width: `${uploadProgress}%` }} />
                       </div>
