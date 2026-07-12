@@ -323,6 +323,28 @@ export default function AdminDashboard({ onLogout, onSwitchToClient }: AdminDash
       return;
     }
     try {
+      let finalName = fileName || 'audio_composição.mp3';
+      if (!finalName.toLowerCase().endsWith('.mp3')) {
+        const lastDot = finalName.lastIndexOf('.');
+        if (lastDot !== -1) {
+          finalName = finalName.substring(0, lastDot) + '.mp3';
+        } else {
+          finalName = finalName + '.mp3';
+        }
+      }
+
+      if (base64OrUrl.startsWith('http://') || base64OrUrl.startsWith('https://')) {
+        const link = document.createElement('a');
+        link.href = base64OrUrl;
+        link.target = "_blank";
+        link.download = finalName;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        showToast(`Iniciando download do áudio: ${finalName}`);
+        return;
+      }
+
       let base64Data = base64OrUrl;
       let contentType = 'audio/mp3';
       
@@ -351,18 +373,6 @@ export default function AdminDashboard({ onLogout, onSwitchToClient }: AdminDash
       
       const link = document.createElement('a');
       link.href = blobUrl;
-      
-      // Ensure file name has .mp3
-      let finalName = fileName || 'audio_composição.mp3';
-      if (!finalName.toLowerCase().endsWith('.mp3')) {
-        const lastDot = finalName.lastIndexOf('.');
-        if (lastDot !== -1) {
-          finalName = finalName.substring(0, lastDot) + '.mp3';
-        } else {
-          finalName = finalName + '.mp3';
-        }
-      }
-      
       link.download = finalName;
       document.body.appendChild(link);
       link.click();
@@ -371,24 +381,7 @@ export default function AdminDashboard({ onLogout, onSwitchToClient }: AdminDash
       showToast(`Iniciando download do áudio: ${finalName}`);
     } catch (err) {
       console.error("Error downloading file via blob conversion:", err);
-      // Fallback to simple anchor click
-      const src = base64OrUrl.startsWith('data:') ? base64OrUrl : 'data:audio/mp3;base64,' + base64OrUrl;
-      const link = document.createElement('a');
-      link.href = src;
-      let finalName = fileName || 'audio_composição.mp3';
-      if (!finalName.toLowerCase().endsWith('.mp3')) {
-        const lastDot = finalName.lastIndexOf('.');
-        if (lastDot !== -1) {
-          finalName = finalName.substring(0, lastDot) + '.mp3';
-        } else {
-          finalName = finalName + '.mp3';
-        }
-      }
-      link.download = finalName;
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      showToast(`Iniciando download do áudio: ${finalName}`);
+      showToast("Erro ao processar download do arquivo.");
     }
   };
 
@@ -2246,12 +2239,7 @@ export default function AdminDashboard({ onLogout, onSwitchToClient }: AdminDash
 
                           <button
                             onClick={() => {
-                              const audioSrc = pedido.audio_bruto_base64
-                                ? (pedido.audio_bruto_base64.startsWith('data:') ? pedido.audio_bruto_base64 : `data:audio/mp3;base64,${pedido.audio_bruto_base64}`)
-                                : (pedido.audioUrl
-                                  ? (pedido.audioUrl.startsWith('data:') || pedido.audioUrl.startsWith('http') ? pedido.audioUrl : `data:audio/mp3;base64,${pedido.audioUrl}`)
-                                  : '');
-                              
+                              const audioSrc = pedido.audio_bruto_base64 || pedido.audioUrl || '';
                               downloadBase64File(audioSrc, pedido.audioName || 'audio_bruto.mp3');
                             }}
                             className="p-2.5 bg-slate-900 hover:bg-slate-800 border border-slate-800 text-cyan-400 hover:text-cyan-300 rounded-lg transition-colors cursor-pointer shrink-0"
@@ -2265,13 +2253,7 @@ export default function AdminDashboard({ onLogout, onSwitchToClient }: AdminDash
                         <div className="pt-2 border-t border-slate-900">
                           <audio 
                             controls 
-                            src={
-                              pedido.audio_bruto_base64 
-                                ? (pedido.audio_bruto_base64.startsWith('data:') ? pedido.audio_bruto_base64 : `data:audio/mp3;base64,${pedido.audio_bruto_base64}`)
-                                : (pedido.audioUrl
-                                  ? (pedido.audioUrl.startsWith('data:') || pedido.audioUrl.startsWith('http') ? pedido.audioUrl : `data:audio/mp3;base64,${pedido.audioUrl}`)
-                                  : null)
-                            } 
+                            src={pedido.audio_bruto_base64 || pedido.audioUrl || null} 
                             className="w-full h-8 rounded-lg bg-slate-900 text-cyan-400 mt-2"
                           />
                         </div>

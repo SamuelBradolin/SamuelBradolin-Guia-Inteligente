@@ -8,7 +8,6 @@ import {
 } from 'lucide-react';
 import { collection, query, where, onSnapshot, addDoc, doc, updateDoc, serverTimestamp } from 'firebase/firestore';
 import { db } from '../firebase';
-import { convertAudioToMp3 } from '../utils/audioConverter';
 
 interface GuideItem {
   id: string;
@@ -211,18 +210,17 @@ export default function Dashboard({ userEmail, onLogout }: DashboardProps) {
       if (selectedFile) {
         try {
           setUploadProgress(30);
-          const compressedBlob = await convertAudioToMp3(selectedFile);
-          setUploadProgress(60);
-          audioBase64 = await convertFileToBase64(compressedBlob);
-          setUploadProgress(75);
-
-          // Size check (950 KB maximum)
-          if (audioBase64.length > 950000) {
-            alert("Arquivo muito grande. Reduza o tempo do áudio ou use uma qualidade menor.");
+          audioBase64 = await convertFileToBase64(selectedFile);
+          
+          // Validação simples de tamanho do Firestore (1MB max = ~1.300.000 caracteres em Base64)
+          if (audioBase64.length > 1300000) {
+            alert("O arquivo de áudio é muito grande. Por favor, envie um arquivo menor ou mais curto.");
             setIsUploading(false);
             setUploadProgress(0);
             return;
           }
+          
+          setUploadProgress(100);
         } catch (uploadErr) {
           console.error("Error converting audio to Base64:", uploadErr);
         }
@@ -236,7 +234,6 @@ export default function Dashboard({ userEmail, onLogout }: DashboardProps) {
       }
 
       try {
-        setUploadProgress(85);
         const newCompObj = {
           // Explicitly requested schema fields
           id_cliente: userEmail,
@@ -314,18 +311,17 @@ export default function Dashboard({ userEmail, onLogout }: DashboardProps) {
     if (selectedFile) {
       try {
         setUploadProgress(30);
-        const compressedBlob = await convertAudioToMp3(selectedFile);
-        setUploadProgress(60);
-        audioBase64 = await convertFileToBase64(compressedBlob);
-        setUploadProgress(75);
-
-        // Size check (950 KB maximum)
-        if (audioBase64.length > 950000) {
-          alert("Arquivo muito grande. Reduza o tempo do áudio ou use uma qualidade menor.");
+        audioBase64 = await convertFileToBase64(selectedFile);
+        
+        // Validação simples de tamanho do Firestore (1MB max = ~1.300.000 caracteres em Base64)
+        if (audioBase64.length > 1300000) {
+          alert("O arquivo de áudio é muito grande. Por favor, envie um arquivo menor ou mais curto.");
           setIsUploading(false);
           setUploadProgress(0);
           return;
         }
+        
+        setUploadProgress(100);
       } catch (uploadErr) {
         console.error("Error converting audio to Base64:", uploadErr);
       }
@@ -339,7 +335,6 @@ export default function Dashboard({ userEmail, onLogout }: DashboardProps) {
     }
 
     try {
-      setUploadProgress(85);
       const newCompObj = {
         // Explicitly requested schema fields
         id_cliente: userEmail,
