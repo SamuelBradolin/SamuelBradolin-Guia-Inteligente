@@ -317,6 +317,81 @@ export default function AdminDashboard({ onLogout, onSwitchToClient }: AdminDash
     });
   };
 
+  const downloadBase64File = (base64OrUrl: string, fileName: string) => {
+    if (!base64OrUrl) {
+      showToast("Áudio não disponível para download.");
+      return;
+    }
+    try {
+      let base64Data = base64OrUrl;
+      let contentType = 'audio/mp3';
+      
+      if (base64OrUrl.startsWith('data:')) {
+        const parts = base64OrUrl.split(',');
+        const mimePart = parts[0].match(/:(.*?);/);
+        if (mimePart) contentType = mimePart[1];
+        base64Data = parts[1];
+      }
+      
+      const byteCharacters = atob(base64Data);
+      const byteArrays = [];
+      
+      for (let offset = 0; offset < byteCharacters.length; offset += 512) {
+        const slice = byteCharacters.slice(offset, offset + 512);
+        const byteNumbers = new Array(slice.length);
+        for (let i = 0; i < slice.length; i++) {
+          byteNumbers[i] = slice.charCodeAt(i);
+        }
+        const byteArray = new Uint8Array(byteNumbers);
+        byteArrays.push(byteArray);
+      }
+      
+      const blob = new Blob(byteArrays, { type: contentType });
+      const blobUrl = URL.createObjectURL(blob);
+      
+      const link = document.createElement('a');
+      link.href = blobUrl;
+      
+      // Ensure file name has .mp3
+      let finalName = fileName || 'audio_composição.mp3';
+      if (!finalName.toLowerCase().endsWith('.mp3')) {
+        const lastDot = finalName.lastIndexOf('.');
+        if (lastDot !== -1) {
+          finalName = finalName.substring(0, lastDot) + '.mp3';
+        } else {
+          finalName = finalName + '.mp3';
+        }
+      }
+      
+      link.download = finalName;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(blobUrl);
+      showToast(`Iniciando download do áudio: ${finalName}`);
+    } catch (err) {
+      console.error("Error downloading file via blob conversion:", err);
+      // Fallback to simple anchor click
+      const src = base64OrUrl.startsWith('data:') ? base64OrUrl : 'data:audio/mp3;base64,' + base64OrUrl;
+      const link = document.createElement('a');
+      link.href = src;
+      let finalName = fileName || 'audio_composição.mp3';
+      if (!finalName.toLowerCase().endsWith('.mp3')) {
+        const lastDot = finalName.lastIndexOf('.');
+        if (lastDot !== -1) {
+          finalName = finalName.substring(0, lastDot) + '.mp3';
+        } else {
+          finalName = finalName + '.mp3';
+        }
+      }
+      link.download = finalName;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      showToast(`Iniciando download do áudio: ${finalName}`);
+    }
+  };
+
   // ACTION 1: Deliver Concluded Guide
   const handleDeliverGuide = async (compId: string) => {
     if (!deliverFileObj) {
@@ -2167,30 +2242,14 @@ export default function AdminDashboard({ onLogout, onSwitchToClient }: AdminDash
                           <p className="text-xs text-white truncate font-mono">{selectedComp.audioName || 'audio_bruto.mp3'}</p>
                         </div>
 
-                        {selectedComp.audio_bruto_base64 ? (
-                          <a
-                            href={selectedComp.audio_bruto_base64}
-                            download={selectedComp.audioName || 'audio_bruto.wav'}
-                            onClick={() => {
-                              showToast(`Iniciando download do áudio bruto: ${selectedComp.audioName}`);
-                            }}
+                        {selectedComp.audio_bruto_base64 || selectedComp.audioUrl ? (
+                          <button
+                            onClick={() => downloadBase64File(selectedComp.audio_bruto_base64 || selectedComp.audioUrl || '', selectedComp.audioName || 'audio_bruto.mp3')}
                             className="p-2.5 bg-slate-900 hover:bg-slate-800 border border-slate-800 text-cyan-400 hover:text-cyan-300 rounded-lg transition-colors cursor-pointer shrink-0"
                             title="Baixar Áudio Bruto"
                           >
                             <Download className="h-4 w-4" />
-                          </a>
-                        ) : selectedComp.audioUrl ? (
-                          <a
-                            href={selectedComp.audioUrl}
-                            download={selectedComp.audioName || 'audio_bruto.wav'}
-                            onClick={() => {
-                              showToast(`Iniciando download do áudio bruto: ${selectedComp.audioName}`);
-                            }}
-                            className="p-2.5 bg-slate-900 hover:bg-slate-800 border border-slate-800 text-cyan-400 hover:text-cyan-300 rounded-lg transition-colors cursor-pointer shrink-0"
-                            title="Baixar Áudio Bruto"
-                          >
-                            <Download className="h-4 w-4" />
-                          </a>
+                          </button>
                         ) : (
                           <button
                             disabled
@@ -2203,20 +2262,16 @@ export default function AdminDashboard({ onLogout, onSwitchToClient }: AdminDash
                       </div>
 
                       {/* Common HTML5 Audio Player */}
-                      {selectedComp.audio_bruto_base64 ? (
+                      {selectedComp.audio_bruto_base64 || selectedComp.audioUrl ? (
                         <div className="pt-2 border-t border-slate-900">
                           <audio 
                             controls 
-                            src={selectedComp.audio_bruto_base64} 
-                            className="w-full h-8 rounded-lg bg-slate-900 text-cyan-400"
-                          />
-                        </div>
-                      ) : selectedComp.audioUrl ? (
-                        <div className="pt-2 border-t border-slate-900">
-                          <audio 
-                            controls 
-                            src={selectedComp.audioUrl} 
-                            className="w-full h-8 rounded-lg bg-slate-900 text-cyan-400"
+                            src={
+                              selectedComp.audio_bruto_base64 
+                                ? (selectedComp.audio_bruto_base64.startsWith('data:') ? selectedComp.audio_bruto_base64 : 'data:audio/mp3;base64,' + selectedComp.audio_bruto_base64)
+                                : (selectedComp.audioUrl && selectedComp.audioUrl.startsWith('data:') ? selectedComp.audioUrl : (selectedComp.audioUrl ? 'data:audio/mp3;base64,' + selectedComp.audioUrl : ''))
+                            } 
+                            className="w-full h-8 rounded-lg bg-slate-900 text-cyan-400 mt-2"
                           />
                         </div>
                       ) : (
