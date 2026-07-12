@@ -179,9 +179,21 @@ export default function Dashboard({ userEmail, onLogout }: DashboardProps) {
   const convertFileToBase64 = (file: File | Blob): Promise<string> => {
     return new Promise((resolve, reject) => {
       const reader = new FileReader();
+      reader.onload = () => {
+        let result = reader.result as string;
+        if (!result) {
+          reject(new Error("Erro ao converter arquivo de áudio: resultado vazio do FileReader"));
+          return;
+        }
+        if (!result.startsWith('data:')) {
+          result = 'data:audio/mp3;base64,' + result;
+        }
+        resolve(result);
+      };
+      reader.onerror = (error) => {
+        reject(error);
+      };
       reader.readAsDataURL(file);
-      reader.onload = () => resolve(reader.result as string);
-      reader.onerror = (error) => reject(error);
     });
   };
 
@@ -219,6 +231,13 @@ export default function Dashboard({ userEmail, onLogout }: DashboardProps) {
         } catch (uploadErr) {
           console.error("Error converting audio to Base64:", uploadErr);
         }
+      }
+
+      if (!audioBase64) {
+        alert("Não foi possível processar o áudio. Por favor, tente enviar novamente.");
+        setIsUploading(false);
+        setUploadProgress(0);
+        return;
       }
 
       try {
@@ -315,6 +334,13 @@ export default function Dashboard({ userEmail, onLogout }: DashboardProps) {
       } catch (uploadErr) {
         console.error("Error converting audio to Base64:", uploadErr);
       }
+    }
+
+    if (!audioBase64) {
+      alert("Não foi possível processar o áudio. Por favor, tente enviar novamente.");
+      setIsUploading(false);
+      setUploadProgress(0);
+      return;
     }
 
     try {

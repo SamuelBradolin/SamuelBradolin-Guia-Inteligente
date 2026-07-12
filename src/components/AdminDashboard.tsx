@@ -2245,14 +2245,34 @@ export default function AdminDashboard({ onLogout, onSwitchToClient }: AdminDash
                           </div>
 
                           <button
-                            onClick={() => downloadBase64File(
-                              pedido.audio_bruto_base64
-                                ? (pedido.audio_bruto_base64.startsWith('data:') ? pedido.audio_bruto_base64 : 'data:audio/mp3;base64,' + pedido.audio_bruto_base64)
+                            onClick={() => {
+                              const audioSrc = pedido.audio_bruto_base64
+                                ? (pedido.audio_bruto_base64.startsWith('data:') ? pedido.audio_bruto_base64 : `data:audio/mp3;base64,${pedido.audio_bruto_base64}`)
                                 : (pedido.audioUrl
-                                  ? (pedido.audioUrl.startsWith('data:') || pedido.audioUrl.startsWith('http') ? pedido.audioUrl : 'data:audio/mp3;base64,' + pedido.audioUrl)
-                                  : ''),
-                              pedido.audioName || 'audio_bruto.mp3'
-                            )}
+                                  ? (pedido.audioUrl.startsWith('data:') || pedido.audioUrl.startsWith('http') ? pedido.audioUrl : `data:audio/mp3;base64,${pedido.audioUrl}`)
+                                  : '');
+                              
+                              if (!audioSrc) {
+                                showToast("Áudio não disponível para download.");
+                                return;
+                              }
+                              
+                              showToast(`Iniciando download do áudio bruto...`);
+                              const link = document.createElement('a');
+                              link.href = audioSrc;
+                              
+                              let baseName = pedido.audioName || 'audio';
+                              const lastDot = baseName.lastIndexOf('.');
+                              if (lastDot !== -1) {
+                                baseName = baseName.substring(0, lastDot);
+                              }
+                              link.download = `${baseName}.mp3`;
+                              
+                              link.style.display = 'none';
+                              document.body.appendChild(link);
+                              link.click();
+                              document.body.removeChild(link);
+                            }}
                             className="p-2.5 bg-slate-900 hover:bg-slate-800 border border-slate-800 text-cyan-400 hover:text-cyan-300 rounded-lg transition-colors cursor-pointer shrink-0"
                             title="Baixar Áudio Bruto"
                           >
@@ -2266,9 +2286,9 @@ export default function AdminDashboard({ onLogout, onSwitchToClient }: AdminDash
                             controls 
                             src={
                               pedido.audio_bruto_base64 
-                                ? (pedido.audio_bruto_base64.startsWith('data:') ? pedido.audio_bruto_base64 : 'data:audio/mp3;base64,' + pedido.audio_bruto_base64)
+                                ? (pedido.audio_bruto_base64.startsWith('data:') ? pedido.audio_bruto_base64 : `data:audio/mp3;base64,${pedido.audio_bruto_base64}`)
                                 : (pedido.audioUrl
-                                  ? (pedido.audioUrl.startsWith('data:') || pedido.audioUrl.startsWith('http') ? pedido.audioUrl : 'data:audio/mp3;base64,' + pedido.audioUrl)
+                                  ? (pedido.audioUrl.startsWith('data:') || pedido.audioUrl.startsWith('http') ? pedido.audioUrl : `data:audio/mp3;base64,${pedido.audioUrl}`)
                                   : '')
                             } 
                             className="w-full h-8 rounded-lg bg-slate-900 text-cyan-400 mt-2"
