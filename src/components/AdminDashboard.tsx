@@ -39,7 +39,8 @@ interface CompositionItem {
   directionDetails?: string;
   partners?: string;
   audioName?: string;
-  status: 'Aguardando Produção' | 'Em Produção' | 'Concluída';
+  audioUrl?: string;
+  status: string;
   date: string;
   finalAudioUrl?: string;
 }
@@ -141,8 +142,8 @@ export default function AdminDashboard({ onLogout, onSwitchToClient }: AdminDash
 
   // Load and Initialize real databases synced through Firestore
   useEffect(() => {
-    // 1. Sync Compositions
-    const qComps = query(collection(db, 'producoes'));
+    // 1. Sync Compositions from 'pedidos'
+    const qComps = query(collection(db, 'pedidos'));
     const unsubComps = onSnapshot(qComps, (snapshot) => {
       const list: CompositionItem[] = [];
       snapshot.forEach((docSnap) => {
@@ -150,19 +151,19 @@ export default function AdminDashboard({ onLogout, onSwitchToClient }: AdminDash
         list.push({
           id: docSnap.id,
           composerName: data.composerName || 'Sem Nome',
-          composerEmail: data.composerEmail || '',
+          composerEmail: data.id_cliente || data.composerEmail || '',
           isCompositorPro: !!data.isCompositorPro,
-          title: data.title || 'Sem Título',
+          title: data.nome_musica || data.title || 'Sem Título',
           genre: data.genre || 'Geral',
           voiceType: data.voiceType || 'Voz Masculina de Estúdio',
           lyrics: data.lyrics || '',
           directionDetails: data.directionDetails || '',
           partners: data.partners || '',
           audioName: data.audioName || '',
-          audioUrl: data.audioUrl || '',
+          audioUrl: data.url_audio || data.audioUrl || '',
           status: data.status || 'Fila de Espera',
-          date: data.date || '',
-          finalAudioUrl: data.finalAudioUrl || ''
+          date: data.data || data.date || '',
+          finalAudioUrl: data.url_audio_final || data.finalAudioUrl || ''
         });
       });
       setCompositions(list);
@@ -304,29 +305,47 @@ export default function AdminDashboard({ onLogout, onSwitchToClient }: AdminDash
   };
 
   // ACTION 1: Deliver Concluded Guide
-  const handleDeliverGuide = (compId: string) => {
-    if (!uploadedDeliverFile) {
-      showToast('Por favor, faça upload do arquivo WAV da guia concluída!');
+  const handleDeliverGuide = async (compId: string) => {
+    if (!deliverFileObj) {
+      showToast('Por favor, faça upload ou selecione o arquivo WAV da guia concluída!');
       return;
     }
 
-    const updatedComps = compositions.map(c => {
-      if (c.id === compId) {
-        return {
-          ...c,
-          status: 'Concluída' as const,
-          finalAudioUrl: uploadedDeliverFile
-        };
-      }
-      return c;
-    });
+    try {
+      setIsUploading(true);
+      setUploadProgress(10);
 
-    saveCompositionsToDB(updatedComps);
-    
-    // Also add to historical user guides if applicable
-    showToast(`Guia "${uploadedDeliverFile}" entregue com sucesso! Status atualizado para Concluído.`);
-    setUploadedDeliverFile(null);
-    setSelectedComp(null);
+      // Create a reference to the delivered files folder in Storage
+      const fileRef = ref(storage, `audios_entregues/${Date.now()}_${deliverFileObj.name}`);
+      setUploadProgress(35);
+
+      // Upload file to Storage
+      const uploadResult = await uploadBytes(fileRef, deliverFileObj);
+      setUploadProgress(70);
+
+      // Get downloadable URL
+      const finalWavUrl = await getDownloadURL(uploadResult.ref);
+      setUploadProgress(90);
+
+      // Update the document in Firestore
+      const docRef = doc(db, 'pedidos', compId);
+      await updateDoc(docRef, {
+        status: 'Concluído',
+        url_audio_final: finalWavUrl,
+        finalAudioUrl: finalWavUrl // Compat field
+      });
+
+      showToast(`Guia entregue com sucesso! Status atualizado para Concluído.`);
+      setUploadedDeliverFile(null);
+      setDeliverFileObj(null);
+      setSelectedComp(null);
+    } catch (err) {
+      console.error("Error delivering final guide to Firebase:", err);
+      alert("Erro ao enviar a guia finalizada. Por favor, tente novamente.");
+    } finally {
+      setIsUploading(false);
+      setUploadProgress(100);
+    }
   };
 
   // ACTION 2: Present Top User
@@ -2146,45 +2165,68 @@ export default function AdminDashboard({ onLogout, onSwitchToClient }: AdminDash
                       Entrega da Guia Acústica Final (WAV)
                     </label>
 
-                    {selectedComp.status === 'Concluída' ? (
+                    {selectedComp.status === 'Concluída' || selectedComp.status === 'Concluído' ? (
                       <div className="p-3.5 bg-emerald-500/5 border border-emerald-500/15 rounded-xl space-y-1.5 text-center">
                         <p className="text-xs text-[#00ff87] font-bold">✓ GUIA CONCLUÍDA E ENTREGUE</p>
-                        <p className="text-[10px] text-slate-400 font-mono">{selectedComp.finalAudioUrl}</p>
+                        <p className="text-[10px] text-slate-400 font-mono break-all">{selectedComp.finalAudioUrl}</p>
                       </div>
                     ) : (
                       <div className="space-y-2.5">
                         <div className="flex gap-2">
                           <input
+                            type="file"
+                            accept="audio/*"
+                            id="deliver-file-input"
+                            className="hidden"
+                            onChange={(e) => {
+                              if (e.target.files && e.target.files[0]) {
+                                const file = e.target.files[0];
+                                setDeliverFileObj(file);
+                                setUploadedDeliverFile(file.name);
+                                showToast(`Áudio selecionado: ${file.name}`);
+                              }
+                            }}
+                          />
+                          <input
                             type="text"
-                            placeholder="Selecione ou arraste o WAV finalizado..."
+                            placeholder="Escolha o arquivo WAV da guia final..."
                             readOnly
                             value={uploadedDeliverFile || ''}
                             className="flex-1 px-3 py-2 bg-slate-950 border border-slate-900 focus:outline-none rounded-lg text-xs text-slate-300 font-mono"
                           />
                           <button
                             type="button"
-                            onClick={() => {
-                              const deliverNames = [
-                                `Guia_Final_${selectedComp.title.replace(/\s+/g, '_')}_Aco_Masc_Premium.wav`,
-                                `Guia_Final_${selectedComp.title.replace(/\s+/g, '_')}_Nylon_Fem_Premium.wav`,
-                                `Guia_Final_${selectedComp.title.replace(/\s+/g, '_')}_Standard.wav`
-                              ];
-                              setUploadedDeliverFile(deliverNames[Math.floor(Math.random() * deliverNames.length)]);
-                              showToast('Áudio finalizado simulado carregado!');
-                            }}
+                            onClick={() => document.getElementById('deliver-file-input')?.click()}
                             className="px-3 py-2 bg-slate-900 border border-slate-800 hover:border-slate-700 text-slate-300 hover:text-white rounded-lg font-mono text-[10px] uppercase cursor-pointer"
                           >
-                            Simular WAV
+                            Upload WAV
                           </button>
                         </div>
 
+                        {isUploading && (
+                          <div className="space-y-1">
+                            <div className="flex justify-between text-[10px] font-mono text-cyan-400">
+                              <span>Enviando guia final...</span>
+                              <span>{uploadProgress}%</span>
+                            </div>
+                            <div className="w-full bg-slate-900 h-1.5 rounded-full overflow-hidden">
+                              <div className="bg-cyan-500 h-full transition-all duration-300" style={{ width: `${uploadProgress}%` }} />
+                            </div>
+                          </div>
+                        )}
+
                         <button
                           type="button"
+                          disabled={isUploading || !deliverFileObj}
                           onClick={() => handleDeliverGuide(selectedComp.id)}
-                          className="w-full py-3 bg-[#00ff87] hover:bg-[#00e076] text-black font-extrabold font-mono text-xs uppercase tracking-wider rounded-xl transition-all shadow-[0_4px_15px_rgba(0,255,135,0.1)] flex items-center justify-center gap-1.5 cursor-pointer"
+                          className={`w-full py-3 font-extrabold font-mono text-xs uppercase tracking-wider rounded-xl transition-all flex items-center justify-center gap-1.5 ${
+                            isUploading || !deliverFileObj
+                              ? 'bg-slate-800 text-slate-500 border border-slate-700 cursor-not-allowed'
+                              : 'bg-[#00ff87] hover:bg-[#00e076] text-black shadow-[0_4px_15px_rgba(0,255,135,0.1)] cursor-pointer'
+                          }`}
                         >
                           <Upload className="h-4 w-4" />
-                          <span>[ 📤 Entregar Guia Concluída ]</span>
+                          <span>{isUploading ? 'ENVIANDO...' : '[ 📤 Entregar Guia Concluída ]'}</span>
                         </button>
                       </div>
                     )}

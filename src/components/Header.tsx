@@ -7,9 +7,10 @@ interface HeaderProps {
   isLoggedIn?: boolean;
   onLogout?: () => void;
   onBackToHome?: () => void;
+  onGoToPanel?: () => void;
 }
 
-export default function Header({ onRegisterClick, onLoginClick, isLoggedIn, onLogout, onBackToHome }: HeaderProps) {
+export default function Header({ onRegisterClick, onLoginClick, isLoggedIn, onLogout, onBackToHome, onGoToPanel }: HeaderProps) {
   const scrollToTop = (e: React.MouseEvent<HTMLAnchorElement>) => {
     e.preventDefault();
     window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -52,13 +53,24 @@ export default function Header({ onRegisterClick, onLoginClick, isLoggedIn, onLo
         {/* Action Buttons: ENTRAR & CADASTRE-SE / SAIR */}
         <div className="flex items-center gap-3">
           {isLoggedIn ? (
-            <button 
-              type="button"
-              onClick={onLogout}
-              className="text-xs font-mono font-bold tracking-wider text-red-400 hover:text-red-300 transition-colors duration-300 uppercase px-3.5 py-2 hover:bg-red-500/5 rounded-lg border border-transparent hover:border-red-500/10 cursor-pointer animate-fade-in"
-            >
-              SAIR DO PAINEL
-            </button>
+            <div className="flex items-center gap-2 animate-fade-in">
+              {onGoToPanel && (
+                <button 
+                  type="button"
+                  onClick={onGoToPanel}
+                  className="text-xs font-mono font-bold tracking-wider text-black bg-[#00ff87] hover:bg-[#00e076] transition-all duration-300 uppercase px-4 py-2 rounded-lg shadow-[0_0_15px_rgba(0,255,135,0.1)] hover:shadow-[0_0_20px_rgba(0,255,135,0.25)] cursor-pointer"
+                >
+                  MEU PAINEL
+                </button>
+              )}
+              <button 
+                type="button"
+                onClick={onLogout}
+                className="text-xs font-mono font-bold tracking-wider text-red-400 hover:text-red-300 transition-colors duration-300 uppercase px-3.5 py-2 hover:bg-red-500/5 rounded-lg border border-transparent hover:border-red-500/10 cursor-pointer"
+              >
+                SAIR
+              </button>
+            </div>
           ) : (
             <>
               <button 

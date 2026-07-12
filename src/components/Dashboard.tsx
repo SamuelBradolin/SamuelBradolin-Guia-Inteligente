@@ -67,10 +67,10 @@ export default function Dashboard({ userEmail, onLogout }: DashboardProps) {
     setActiveDiscount(currentUser.activeDiscount || 0);
     setIsCompositorPro(currentUser.isCompositorPro || false);
 
-    // 2. Sync Compositions from Firestore Collection
+    // 2. Sync Compositions from Firestore Collection (pedidos)
     const q = query(
-      collection(db, 'producoes'),
-      where('composerEmail', '==', userEmail)
+      collection(db, 'pedidos'),
+      where('id_cliente', '==', userEmail)
     );
     
     const unsubscribeComps = onSnapshot(q, (snapshot) => {
@@ -79,55 +79,19 @@ export default function Dashboard({ userEmail, onLogout }: DashboardProps) {
         list.push({ id: docSnap.id, ...docSnap.data() });
       });
       
-      if (list.length === 0) {
-        // Seed initial guides in Firestore for this user if they don't have any yet
-        const initialUserComps = [
-          {
-            composerName: currentUser.name,
-            composerEmail: userEmail,
-            isCompositorPro: currentUser.isCompositorPro,
-            title: 'Amor de Estúdio',
-            date: '11/07/2026',
-            status: 'Em Produção',
-            genre: 'Sertanejo Universitário',
-            voiceType: 'Voz Masculina de Estúdio',
-            lyrics: 'O rádio tocava aquele sertanejo antigo...\nE eu aqui pensando em te ter comigo.',
-            audioName: 'gravacao_celular_1.mp3',
-            audioUrl: 'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3',
-            createdAt: serverTimestamp()
-          },
-          {
-            composerName: currentUser.name,
-            composerEmail: userEmail,
-            isCompositorPro: currentUser.isCompositorPro,
-            title: 'Sofrência Absoluta',
-            date: '08/07/2026',
-            status: 'Concluída',
-            genre: 'Sertanejo de Raiz',
-            voiceType: 'Voz Feminina de Estúdio',
-            lyrics: 'Copos vazios na mesa do bar...\nVocê me deixou sem olhar pra trás.',
-            audioName: 'gravacao_celular_2.mp3',
-            audioUrl: 'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-2.mp3',
-            finalAudioUrl: 'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-3.mp3',
-            createdAt: serverTimestamp()
-          }
-        ];
-        initialUserComps.forEach(comp => {
-          addDoc(collection(db, 'producoes'), comp).catch(err => console.error("Error seeding default user comp:", err));
-        });
-      } else {
-        // Map composition list to client GuideItem format
-        const mappedGuides = list.map((c: any) => ({
-          id: c.id,
-          title: c.title,
-          date: c.date || '11/07/2026',
-          status: c.status || 'Fila de Espera',
-          genre: c.genre || 'Sertanejo',
-          voiceType: c.voiceType || 'Voz Masculina de Estúdio',
-          finalAudioUrl: c.finalAudioUrl
-        }));
-        setGuides(mappedGuides);
-      }
+      // Map composition list to client GuideItem format
+      const mappedGuides = list.map((c: any) => ({
+        id: c.id,
+        title: c.nome_musica || c.title || 'Sem Título',
+        date: c.data || c.date || '11/07/2026',
+        status: c.status || 'Fila de Espera',
+        genre: c.genre || 'Sertanejo',
+        voiceType: c.voiceType || 'Voz Masculina de Estúdio',
+        finalAudioUrl: c.url_audio_final || c.finalAudioUrl || c.url_audio_entrega
+      }));
+      setGuides(mappedGuides);
+    }, (error) => {
+      console.error("Error loading guides from Firebase pedidos collection:", error);
     });
 
     // 3. Sync CRM Notifications
@@ -248,6 +212,14 @@ export default function Dashboard({ userEmail, onLogout }: DashboardProps) {
 
       try {
         const newCompObj = {
+          // Explicitly requested schema fields
+          id_cliente: userEmail,
+          nome_musica: newTitle,
+          status: 'Fila de Espera',
+          data: new Date().toLocaleDateString('pt-BR'),
+          url_audio: audioUrl,
+
+          // Legacy compatible fields
           composerName: composerName,
           composerEmail: userEmail,
           isCompositorPro: isCompositorPro,
@@ -259,12 +231,10 @@ export default function Dashboard({ userEmail, onLogout }: DashboardProps) {
           partners: partners,
           audioName: fileName || 'audio_composição.mp3',
           audioUrl: audioUrl,
-          status: 'Fila de Espera' as const,
-          date: new Date().toLocaleDateString('pt-BR'),
           createdAt: serverTimestamp()
         };
 
-        await addDoc(collection(db, 'producoes'), newCompObj);
+        await addDoc(collection(db, 'pedidos'), newCompObj);
 
         // Deduct credits locally in profile
         const newCredits = credits - 1;
@@ -327,6 +297,14 @@ export default function Dashboard({ userEmail, onLogout }: DashboardProps) {
 
     try {
       const newCompObj = {
+        // Explicitly requested schema fields
+        id_cliente: userEmail,
+        nome_musica: newTitle || 'Nova Guia Premium',
+        status: 'Fila de Espera',
+        data: new Date().toLocaleDateString('pt-BR'),
+        url_audio: audioUrl,
+
+        // Legacy compatible fields
         composerName: composerName,
         composerEmail: userEmail,
         isCompositorPro: isCompositorPro,
@@ -338,12 +316,10 @@ export default function Dashboard({ userEmail, onLogout }: DashboardProps) {
         partners: partners,
         audioName: fileName || 'audio_composição.mp3',
         audioUrl: audioUrl,
-        status: 'Fila de Espera' as const,
-        date: new Date().toLocaleDateString('pt-BR'),
         createdAt: serverTimestamp()
       };
 
-      await addDoc(collection(db, 'producoes'), newCompObj);
+      await addDoc(collection(db, 'pedidos'), newCompObj);
 
       // Save transaction to Firestore
       const discount = activeDiscount || 0;

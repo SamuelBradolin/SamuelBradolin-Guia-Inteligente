@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { motion } from 'motion/react';
 import { 
   Mic2, Guitar, ShieldCheck, Headphones, Sliders, Disc, 
@@ -18,9 +18,33 @@ import AdminDashboard from './components/AdminDashboard';
 export default function App() {
   const [isWizardOpen, setIsWizardOpen] = useState(false);
   const [isLoginOpen, setIsLoginOpen] = useState(false);
-  const [isLoggedIn, setIsLoggedIn] = useState(false);
-  const [userEmail, setUserEmail] = useState('');
-  const [isAdminView, setIsAdminView] = useState(false);
+  
+  // Persist authentication state in localStorage for a seamless refresh experience
+  const [isLoggedIn, setIsLoggedIn] = useState(() => {
+    return localStorage.getItem('gi_logged_in') === 'true';
+  });
+  const [userEmail, setUserEmail] = useState(() => {
+    return localStorage.getItem('gi_user_email') || '';
+  });
+  const [isAdminView, setIsAdminView] = useState(() => {
+    return localStorage.getItem('gi_is_admin_view') === 'true';
+  });
+
+  // Track the current URL pathname for routing
+  const [currentPath, setCurrentPath] = useState(window.location.pathname);
+
+  useEffect(() => {
+    const handlePopState = () => {
+      setCurrentPath(window.location.pathname);
+    };
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, []);
+
+  const navigateTo = (path: string) => {
+    window.history.pushState({}, '', path);
+    setCurrentPath(path);
+  };
 
   const openWizard = () => {
     setIsLoginOpen(false);
@@ -37,10 +61,17 @@ export default function App() {
   const handleLoginSuccess = (email: string) => {
     setUserEmail(email);
     setIsLoggedIn(true);
+    localStorage.setItem('gi_logged_in', 'true');
+    localStorage.setItem('gi_user_email', email);
+
     if (email.toLowerCase().includes('admin')) {
       setIsAdminView(true);
+      localStorage.setItem('gi_is_admin_view', 'true');
+      navigateTo('/produtor');
     } else {
       setIsAdminView(false);
+      localStorage.setItem('gi_is_admin_view', 'false');
+      navigateTo('/cliente');
     }
   };
 
@@ -48,7 +79,54 @@ export default function App() {
     setIsLoggedIn(false);
     setUserEmail('');
     setIsAdminView(false);
+    localStorage.removeItem('gi_logged_in');
+    localStorage.removeItem('gi_user_email');
+    localStorage.removeItem('gi_is_admin_view');
+    navigateTo('/');
   };
+
+  const handleBackToHome = () => {
+    navigateTo('/');
+  };
+
+  // 1. Route Resolution Engine
+  let viewToRender: 'home' | 'client' | 'admin' = 'home';
+  
+  if (currentPath === '/produtor' || currentPath === '/admin') {
+    if (isLoggedIn && userEmail.toLowerCase().includes('admin')) {
+      viewToRender = 'admin';
+    } else if (isLoggedIn) {
+      // Normal user trying to access admin - redirect to client dashboard
+      viewToRender = 'client';
+      window.history.replaceState({}, '', '/cliente');
+      setTimeout(() => setCurrentPath('/cliente'), 0);
+    } else {
+      // Unauthorized, show home and prompt login
+      viewToRender = 'home';
+      if (!isLoginOpen && !isWizardOpen) {
+        setIsLoginOpen(true);
+      }
+    }
+  } else if (currentPath === '/cliente' || currentPath === '/dashboard') {
+    if (isLoggedIn) {
+      if (userEmail.toLowerCase().includes('admin')) {
+        viewToRender = 'admin';
+        window.history.replaceState({}, '', '/produtor');
+        setTimeout(() => setCurrentPath('/produtor'), 0);
+      } else {
+        viewToRender = 'client';
+      }
+    } else {
+      // Unauthorized, show home and prompt login
+      viewToRender = 'home';
+      if (!isLoginOpen && !isWizardOpen) {
+        setIsLoginOpen(true);
+      }
+    }
+  } else {
+    // Normal / landing page
+    viewToRender = 'home';
+  }
 
   return (
     <div className="min-h-screen bg-[#0f1115] font-sans text-slate-200 flex flex-col selection:bg-[#00ff87]/30 selection:text-[#00ff87]">
@@ -59,12 +137,20 @@ export default function App() {
             <span className="h-2 w-2 rounded-full bg-[#00ff87] animate-pulse"></span>
             <span>Ambiente: <strong>Painel do Produtor (Admin)</strong> • Logado como: <span className="text-[#00ff87] font-semibold">{userEmail}</span></span>
           </div>
-          <button 
-            onClick={() => setIsAdminView(!isAdminView)}
-            className="px-3 py-1 rounded bg-[#00ff87] text-black font-extrabold uppercase tracking-wider hover:bg-[#00e076] transition-all cursor-pointer shadow-[0_2px_10px_rgba(0,255,135,0.2)] text-[10px]"
-          >
-            {isAdminView ? '[ Ver Painel do Cliente ]' : '[ Ver Central do Produtor (Admin) ]'}
-          </button>
+          <div className="flex gap-3">
+            <button 
+              onClick={() => {
+                if (viewToRender === 'admin') {
+                  navigateTo('/cliente');
+                } else {
+                  navigateTo('/produtor');
+                }
+              }}
+              className="px-3 py-1 rounded bg-[#00ff87] text-black font-extrabold uppercase tracking-wider hover:bg-[#00e076] transition-all cursor-pointer shadow-[0_2px_10px_rgba(0,255,135,0.2)] text-[10px]"
+            >
+              {viewToRender === 'admin' ? '[ Ver Painel do Cliente ]' : '[ Ver Central do Produtor (Admin) ]'}
+            </button>
+          </div>
         </div>
       )}
 
@@ -74,11 +160,18 @@ export default function App() {
         onLoginClick={openLogin} 
         isLoggedIn={isLoggedIn}
         onLogout={handleLogout}
-        onBackToHome={handleLogout}
+        onBackToHome={handleBackToHome}
+        onGoToPanel={() => {
+          if (userEmail.toLowerCase().includes('admin')) {
+            navigateTo('/produtor');
+          } else {
+            navigateTo('/cliente');
+          }
+        }}
       />
 
       {/* Main Content */}
-      {!isLoggedIn ? (
+      {viewToRender === 'home' && (
         <>
           <main className="flex-1">
         
@@ -124,7 +217,7 @@ export default function App() {
               transition={{ duration: 0.6, delay: 0.2 }}
               className="text-slate-400 max-w-3xl mx-auto text-sm md:text-base leading-relaxed md:px-4"
             >
-              Envie o áudio do seu celular cantando ou tocando a sua música. Nossa curadoria isola sua melodia, substitui por uma engenharia de voz impecável e cria o acompanhamento de violão perfeito. Simples, acústico e no padrão que o mercado exige — teste nosso sistema sem custo hoje mesmo.
+              Envie o áudio do seu celular cantando ou tocando a sua música. Nossa curadoria isola sua melodia, substitui por uma engenharia de voz impecável e cria o acompanhamento de violão perfeito. Simples, acústico e no padrão que o mercado exige — teste nosso system sem custo hoje mesmo.
             </motion.p>
 
             {/* CTA Button */}
@@ -224,12 +317,14 @@ export default function App() {
           {/* Footer */}
           <Footer />
         </>
-      ) : (
-        isAdminView ? (
-          <AdminDashboard onLogout={handleLogout} onSwitchToClient={() => setIsAdminView(false)} />
-        ) : (
-          <Dashboard userEmail={userEmail} onLogout={handleLogout} />
-        )
+      )}
+
+      {viewToRender === 'client' && (
+        <Dashboard userEmail={userEmail} onLogout={handleLogout} />
+      )}
+
+      {viewToRender === 'admin' && (
+        <AdminDashboard onLogout={handleLogout} onSwitchToClient={() => navigateTo('/cliente')} />
       )}
 
       {/* Interactive Submit Wizard Modal */}
