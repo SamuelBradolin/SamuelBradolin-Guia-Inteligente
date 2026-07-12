@@ -9,6 +9,7 @@ import {
 import { collection, query, where, onSnapshot, addDoc, doc, updateDoc, serverTimestamp } from 'firebase/firestore';
 import { db } from '../firebase';
 import { supabase } from '../supabase';
+import { CustomAudioPlayer } from './CustomAudioPlayer';
 
 interface GuideItem {
   id: string;
@@ -872,13 +873,20 @@ export default function Dashboard({ userEmail, onLogout }: DashboardProps) {
                           </td>
                           <td className="py-4 px-6 text-right">
                             {item.status === 'Concluída' ? (
-                              <button
-                                onClick={() => handleDownloadAudio(item.title, item.finalAudioUrl)}
-                                className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-[#00ff87] hover:bg-[#00e076] text-black rounded-lg font-bold font-mono text-[10px] uppercase tracking-wider transition-all duration-300 shadow-[0_0_15px_rgba(0,255,135,0.1)] hover:shadow-[0_0_20px_rgba(0,255,135,0.25)]"
-                              >
-                                <Download className="h-3 w-3" />
-                                <span>Baixar WAV</span>
-                              </button>
+                              <div className="flex flex-col items-end gap-2.5">
+                                <button
+                                  onClick={() => handleDownloadAudio(item.title, item.finalAudioUrl)}
+                                  className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-[#00ff87] hover:bg-[#00e076] text-black rounded-lg font-bold font-mono text-[10px] uppercase tracking-wider transition-all duration-300 shadow-[0_0_15px_rgba(0,255,135,0.1)] hover:shadow-[0_0_20px_rgba(0,255,135,0.25)]"
+                                >
+                                  <Download className="h-3 w-3" />
+                                  <span>Baixar WAV</span>
+                                </button>
+                                {item.finalAudioUrl && (
+                                  <div className="mt-1 w-full flex justify-end">
+                                    <CustomAudioPlayer src={item.finalAudioUrl} />
+                                  </div>
+                                )}
+                              </div>
                             ) : (
                               <button
                                 disabled
