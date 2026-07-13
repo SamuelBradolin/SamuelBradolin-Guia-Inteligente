@@ -134,6 +134,8 @@ export default function AdminDashboard({ onLogout, onSwitchToClient }: AdminDash
   const [uploadedCuratedFile, setUploadedCuratedFile] = useState<string | null>(null);
   const [isUploadingOriginal, setIsUploadingOriginal] = useState(false);
   const [isUploadingCurated, setIsUploadingCurated] = useState(false);
+  const [hasLoadedOriginal, setHasLoadedOriginal] = useState(false);
+  const [hasLoadedCurated, setHasLoadedCurated] = useState(false);
 
   // Production Detail Modal State
   const [selectedComp, setSelectedComp] = useState<CompositionItem | null>(null);
@@ -694,14 +696,14 @@ export default function AdminDashboard({ onLogout, onSwitchToClient }: AdminDash
       const isOriginal = type === 'original';
       if (isOriginal) {
         setIsUploadingOriginal(true);
+        setHasLoadedOriginal(false);
       } else {
         setIsUploadingCurated(true);
+        setHasLoadedCurated(false);
       }
 
       try {
-        const fileExt = file.name.split('.').pop() || 'mp3';
-        const uniqueFileName = `${Date.now()}-${Math.random().toString(36).substring(2, 15)}.${fileExt}`;
-        const filePath = `demonstracoes/${type}_${uniqueFileName}`;
+        const filePath = `demonstracoes/${Date.now()}_${file.name}`;
 
         const { data, error } = await supabase.storage
           .from('audios')
@@ -720,9 +722,11 @@ export default function AdminDashboard({ onLogout, onSwitchToClient }: AdminDash
 
         if (isOriginal) {
           setUploadedOriginalFile(publicUrl);
+          setHasLoadedOriginal(true);
           showToast('Áudio original carregado com sucesso!');
         } else {
           setUploadedCuratedFile(publicUrl);
+          setHasLoadedCurated(true);
           showToast('Guia final profissional carregada com sucesso!');
         }
       } catch (err) {
@@ -741,7 +745,7 @@ export default function AdminDashboard({ onLogout, onSwitchToClient }: AdminDash
   };
 
   // ACTION 8: Adicionar Novo Exemplo de Áudio (Home demo manager)
-  const handleCreateHomeDemo = (e: React.FormEvent) => {
+  const handleCreateHomeDemo = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newDemoTitle || !newDemoGenre || !newDemoOriginal || !newDemoCurated) {
       showToast('Preencha os campos editáveis do exemplo de áudio!');
@@ -758,8 +762,28 @@ export default function AdminDashboard({ onLogout, onSwitchToClient }: AdminDash
       curatedAudioName: uploadedCuratedFile || 'estudio_guia_profissional.wav'
     };
 
-    saveHomeDemosToDB([...homeDemos, newDemo]);
-    showToast(`Novo exemplo de áudio "${newDemoTitle}" adicionado com sucesso!`);
+    try {
+      // Persist in 'demonstracoes' collection
+      await setDoc(doc(db, 'demonstracoes', newDemo.id), {
+        ...newDemo,
+        createdAt: new Date().toISOString()
+      });
+
+      // Persist in 'antes_depois' collection
+      await setDoc(doc(db, 'antes_depois', newDemo.id), {
+        ...newDemo,
+        createdAt: new Date().toISOString()
+      });
+
+      // Save to configurations
+      await saveHomeDemosToDB([...homeDemos, newDemo]);
+      showToast(`Novo exemplo de áudio "${newDemoTitle}" adicionado com sucesso e persistido no Firestore!`);
+    } catch (err) {
+      console.error("Erro ao salvar exemplo no Firestore:", err);
+      // Fallback local save if offline
+      saveHomeDemosToDB([...homeDemos, newDemo]);
+      showToast(`Novo exemplo de áudio "${newDemoTitle}" adicionado localmente.`);
+    }
 
     // Reset fields
     setNewDemoTitle('');
@@ -768,6 +792,8 @@ export default function AdminDashboard({ onLogout, onSwitchToClient }: AdminDash
     setNewDemoCurated('');
     setUploadedOriginalFile(null);
     setUploadedCuratedFile(null);
+    setHasLoadedOriginal(false);
+    setHasLoadedCurated(false);
     setShowAddDemo(false);
   };
 
@@ -1743,9 +1769,13 @@ export default function AdminDashboard({ onLogout, onSwitchToClient }: AdminDash
                               type="button"
                               disabled={isUploadingOriginal}
                               onClick={() => handleUploadDemoFile('original')}
-                              className="px-3 py-2 bg-slate-900 border border-slate-800 hover:border-slate-700 text-slate-300 rounded-lg font-mono text-[10px] uppercase cursor-pointer disabled:opacity-50 min-w-[85px] flex items-center justify-center"
+                              className={`px-3 py-2 border rounded-lg font-mono text-[10px] uppercase cursor-pointer disabled:opacity-50 min-w-[95px] flex items-center justify-center transition-all ${
+                                hasLoadedOriginal 
+                                  ? 'bg-[#00ff87]/10 border-[#00ff87]/30 text-[#00ff87] font-bold' 
+                                  : 'bg-slate-900 border-slate-800 hover:border-slate-700 text-slate-300'
+                              }`}
                             >
-                              {isUploadingOriginal ? 'Subindo...' : 'Carregar'}
+                              {isUploadingOriginal ? 'Subindo...' : hasLoadedOriginal ? '✓ Carregado!' : 'Carregar'}
                             </button>
                           </div>
                         </div>
@@ -1764,9 +1794,13 @@ export default function AdminDashboard({ onLogout, onSwitchToClient }: AdminDash
                               type="button"
                               disabled={isUploadingCurated}
                               onClick={() => handleUploadDemoFile('curated')}
-                              className="px-3 py-2 bg-slate-900 border border-slate-800 hover:border-slate-700 text-slate-300 rounded-lg font-mono text-[10px] uppercase cursor-pointer disabled:opacity-50 min-w-[85px] flex items-center justify-center"
+                              className={`px-3 py-2 border rounded-lg font-mono text-[10px] uppercase cursor-pointer disabled:opacity-50 min-w-[95px] flex items-center justify-center transition-all ${
+                                hasLoadedCurated 
+                                  ? 'bg-[#00ff87]/10 border-[#00ff87]/30 text-[#00ff87] font-bold' 
+                                  : 'bg-slate-900 border-slate-800 hover:border-slate-700 text-slate-300'
+                              }`}
                             >
-                              {isUploadingCurated ? 'Subindo...' : 'Carregar'}
+                              {isUploadingCurated ? 'Subindo...' : hasLoadedCurated ? '✓ Carregado!' : 'Carregar'}
                             </button>
                           </div>
                         </div>

@@ -10,10 +10,12 @@ interface DemoTrack {
   genre: string;
   originalText: string;
   curatedText: string;
-  styleKey: 'sertanejo' | 'piseiro';
-  gender: 'masculine' | 'feminine';
-  coverUrl: string;
-  altText: string;
+  styleKey?: 'sertanejo' | 'piseiro';
+  gender?: 'masculine' | 'feminine';
+  coverUrl?: string;
+  altText?: string;
+  originalAudioName?: string;
+  curatedAudioName?: string;
 }
 
 export default function AudioDemoSection() {
@@ -68,32 +70,74 @@ export default function AudioDemoSection() {
     return () => unsubscribe();
   }, []);
 
+  const stopAll = () => {
+    clearInterval((window as any)._originalAudioInterval);
+    if ((window as any)._realAudioPlayer) {
+      try {
+        (window as any)._realAudioPlayer.pause();
+        (window as any)._realAudioPlayer = null;
+      } catch (e) {
+        console.error(e);
+      }
+    }
+    audioSynth.stop();
+    setIsPlayingOriginal(false);
+    setIsPlayingCurated(false);
+  };
+
   // Stop any playing audio if the active track changes
   useEffect(() => {
     return () => {
-      audioSynth.stop();
+      stopAll();
     };
   }, []);
 
   const handlePlayOriginal = (trackId: string) => {
-    // If already playing curated, stop it
-    if (isPlayingCurated) {
-      audioSynth.stop();
-      setIsPlayingCurated(false);
+    // If already playing this track, stop it
+    if (activeTrack === trackId && isPlayingOriginal) {
+      stopAll();
+      return;
     }
 
-    if (activeTrack === trackId && isPlayingOriginal) {
-      setIsPlayingOriginal(false);
-    } else {
-      audioSynth.stop(); // safety
-      setIsPlayingCurated(false);
-      setActiveTrack(trackId);
-      setIsPlayingOriginal(true);
-      setProgress(0);
-      setCurrentTime(0);
+    stopAll();
+    setActiveTrack(trackId);
+    setIsPlayingOriginal(true);
+    setProgress(0);
+    setCurrentTime(0);
 
+    const track = demoTracks.find((t) => t.id === trackId);
+    const audioUrl = track?.originalAudioName;
+
+    if (audioUrl && (audioUrl.startsWith('http://') || audioUrl.startsWith('https://'))) {
+      // Play real audio file from Supabase Storage
+      const audio = new Audio(audioUrl);
+      (window as any)._realAudioPlayer = audio;
+
+      audio.addEventListener('timeupdate', () => {
+        if (audio.duration) {
+          const currentProgress = (audio.currentTime / audio.duration) * 100;
+          setProgress(currentProgress);
+          setCurrentTime(audio.currentTime);
+        }
+      });
+
+      audio.addEventListener('ended', () => {
+        setIsPlayingOriginal(false);
+        setProgress(0);
+        setCurrentTime(0);
+      });
+
+      audio.addEventListener('error', (e) => {
+        console.error('Erro ao tocar áudio real:', e);
+        setIsPlayingOriginal(false);
+      });
+
+      audio.play().catch((err) => {
+        console.error('Falha ao iniciar áudio real:', err);
+        setIsPlayingOriginal(false);
+      });
+    } else {
       // Simulate playing low-quality client hum
-      let count = 0;
       const interval = setInterval(() => {
         setProgress((prev) => {
           if (prev >= 100) {
@@ -110,24 +154,53 @@ export default function AudioDemoSection() {
     }
   };
 
-  const handlePlayCurated = (trackId: string, style: 'sertanejo' | 'piseiro', gender: 'masculine' | 'feminine') => {
-    // If playing original, clear interval
-    if (isPlayingOriginal) {
-      clearInterval((window as any)._originalAudioInterval);
-      setIsPlayingOriginal(false);
+  const handlePlayCurated = (trackId: string, style?: 'sertanejo' | 'piseiro', gender?: 'masculine' | 'feminine') => {
+    // If already playing this track, stop it
+    if (activeTrack === trackId && isPlayingCurated) {
+      stopAll();
+      return;
     }
 
-    if (activeTrack === trackId && isPlayingCurated) {
-      audioSynth.stop();
-      setIsPlayingCurated(false);
-    } else {
-      setActiveTrack(trackId);
-      setIsPlayingCurated(true);
-      setProgress(0);
-      setCurrentTime(0);
+    stopAll();
+    setActiveTrack(trackId);
+    setIsPlayingCurated(true);
+    setProgress(0);
+    setCurrentTime(0);
 
+    const track = demoTracks.find((t) => t.id === trackId);
+    const audioUrl = track?.curatedAudioName;
+
+    if (audioUrl && (audioUrl.startsWith('http://') || audioUrl.startsWith('https://'))) {
+      // Play real audio file from Supabase Storage
+      const audio = new Audio(audioUrl);
+      (window as any)._realAudioPlayer = audio;
+
+      audio.addEventListener('timeupdate', () => {
+        if (audio.duration) {
+          const currentProgress = (audio.currentTime / audio.duration) * 100;
+          setProgress(currentProgress);
+          setCurrentTime(audio.currentTime);
+        }
+      });
+
+      audio.addEventListener('ended', () => {
+        setIsPlayingCurated(false);
+        setProgress(0);
+        setCurrentTime(0);
+      });
+
+      audio.addEventListener('error', (e) => {
+        console.error('Erro ao tocar áudio real curado:', e);
+        setIsPlayingCurated(false);
+      });
+
+      audio.play().catch((err) => {
+        console.error('Falha ao iniciar áudio real curado:', err);
+        setIsPlayingCurated(false);
+      });
+    } else {
       // Trigger the real Web Audio API synthesizer
-      audioSynth.playDemo(style, gender, (prog, current) => {
+      audioSynth.playDemo(style || 'sertanejo', gender || 'masculine', (prog, current) => {
         setProgress(prog);
         setCurrentTime(current);
         if (prog >= 100 || prog === 0) {
@@ -135,13 +208,6 @@ export default function AudioDemoSection() {
         }
       });
     }
-  };
-
-  const stopAll = () => {
-    clearInterval((window as any)._originalAudioInterval);
-    audioSynth.stop();
-    setIsPlayingOriginal(false);
-    setIsPlayingCurated(false);
   };
 
   const formatTime = (timeInSeconds: number) => {
