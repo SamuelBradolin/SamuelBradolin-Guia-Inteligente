@@ -30,6 +30,7 @@ export default function Dashboard({ userEmail, onLogout }: DashboardProps) {
   const [activeTab, setActiveTab] = useState<'history' | 'new' | 'settings' | 'contribute'>('history');
   const [composerName, setComposerName] = useState('Roberto Santos');
   const [credits, setCredits] = useState(1);
+  const [userDocId, setUserDocId] = useState<string | null>(null);
   const [isCompositorPro, setIsCompositorPro] = useState(false);
   const [activeDiscount, setActiveDiscount] = useState(0);
   const [globalNotice, setGlobalNotice] = useState<string | null>(null);
@@ -51,6 +52,7 @@ export default function Dashboard({ userEmail, onLogout }: DashboardProps) {
       if (!snapshot.empty) {
         const userDoc = snapshot.docs[0];
         const data = userDoc.data();
+        setUserDocId(userDoc.id);
         setComposerName(data.nome || data.name || userEmail.split('@')[0].toUpperCase());
         setCredits(data.credits !== undefined ? data.credits : 1);
         setActiveDiscount(data.activeDiscount || 0);
@@ -268,9 +270,17 @@ export default function Dashboard({ userEmail, onLogout }: DashboardProps) {
         await addDoc(collection(db, 'pedidos'), newCompObj);
         setUploadProgress(100);
 
-        // Deduct credits locally in profile
-        const newCredits = credits - 1;
+        // Deduct credits locally and in Firestore
+        const newCredits = Math.max(0, credits - 1);
         setCredits(newCredits);
+
+        if (userDocId) {
+          const userDocRef = doc(db, 'usuarios', userDocId);
+          await updateDoc(userDocRef, {
+            credits: newCredits
+          });
+        }
+
         const cachedUsers = localStorage.getItem('gi_users');
         if (cachedUsers) {
           const usersList = JSON.parse(cachedUsers);
@@ -686,8 +696,17 @@ export default function Dashboard({ userEmail, onLogout }: DashboardProps) {
             </button>
 
             <button
-              onClick={() => setActiveTab('new')}
+              onClick={() => {
+                if (credits <= 0) {
+                  alert("Você não possui saldo de guias disponível para enviar uma nova composição. Por favor, adicione mais créditos.");
+                  setShowPixModal(true);
+                } else {
+                  setActiveTab('new');
+                }
+              }}
               className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg font-mono text-xs font-bold tracking-wider uppercase transition-all border ${
+                credits <= 0 ? 'opacity-60 cursor-not-allowed hover:bg-slate-900/20' : ''
+              } ${
                 activeTab === 'new'
                   ? 'bg-[#00ff87]/10 text-[#00ff87] border-[#00ff87]/20'
                   : 'text-slate-400 hover:text-white border-transparent hover:bg-slate-900/50'
