@@ -505,23 +505,31 @@ export default function Dashboard({ userEmail, onLogout }: DashboardProps) {
     setConfirmNewPassword('');
   };
 
-  const handleDownloadAudio = (title: string, finalAudioUrl?: string) => {
+  const handleDownloadAudio = async (title: string, finalAudioUrl?: string) => {
     if (!finalAudioUrl) {
       showToast("Áudio final não disponível.");
       return;
     }
 
     if (finalAudioUrl.startsWith('http')) {
-      showToast(`Iniciando download em WAV de alta definição: "${title}"`);
-      const element = document.createElement('a');
-      element.setAttribute('href', finalAudioUrl);
-      element.setAttribute('target', '_blank');
-      element.setAttribute('rel', 'noopener noreferrer');
-      element.setAttribute('download', `${title.toLowerCase().replace(/\s+/g, '_')}_guia_acustica.wav`);
-      element.style.display = 'none';
-      document.body.appendChild(element);
-      element.click();
-      document.body.removeChild(element);
+      try {
+        showToast(`Iniciando download em WAV de alta definição: "${title}"`);
+        const response = await fetch(finalAudioUrl);
+        const blob = await response.blob();
+        const blobUrl = window.URL.createObjectURL(blob);
+        const element = document.createElement('a');
+        element.href = blobUrl;
+        element.download = `${title.toLowerCase().replace(/\s+/g, '_')}_guia_acustica.wav`;
+        element.style.display = 'none';
+        document.body.appendChild(element);
+        element.click();
+        document.body.removeChild(element);
+        window.URL.revokeObjectURL(blobUrl);
+      } catch (err) {
+        console.error("Erro ao baixar áudio do Supabase:", err);
+        // Fallback to open in new tab if fetch fails
+        window.open(finalAudioUrl, '_blank');
+      }
     } else {
       // It's a Base64 string!
       try {

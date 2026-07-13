@@ -9,6 +9,7 @@ import {
 import { db } from '../firebase';
 import { supabase } from '../supabase';
 import { convertAudioToMp3 } from '../utils/audioConverter';
+import { CustomAudioPlayer } from './CustomAudioPlayer';
 import { 
   collection, 
   addDoc, 
@@ -318,7 +319,7 @@ export default function AdminDashboard({ onLogout, onSwitchToClient }: AdminDash
     });
   };
 
-  const downloadBase64File = (base64OrUrl: string, fileName: string) => {
+  const downloadBase64File = async (base64OrUrl: string, fileName: string) => {
     if (!base64OrUrl) {
       showToast("Áudio não disponível para download.");
       return;
@@ -335,14 +336,17 @@ export default function AdminDashboard({ onLogout, onSwitchToClient }: AdminDash
       }
 
       if (base64OrUrl.startsWith('http://') || base64OrUrl.startsWith('https://')) {
+        showToast(`Iniciando download do áudio: ${finalName}`);
+        const response = await fetch(base64OrUrl);
+        const blob = await response.blob();
+        const blobUrl = window.URL.createObjectURL(blob);
         const link = document.createElement('a');
-        link.href = base64OrUrl;
-        link.target = "_blank";
+        link.href = blobUrl;
         link.download = finalName;
         document.body.appendChild(link);
         link.click();
         document.body.removeChild(link);
-        showToast(`Iniciando download do áudio: ${finalName}`);
+        window.URL.revokeObjectURL(blobUrl);
         return;
       }
 
@@ -2251,25 +2255,22 @@ export default function AdminDashboard({ onLogout, onSwitchToClient }: AdminDash
                             <p className="text-xs text-white truncate font-mono">{pedido.audioName || 'audio_bruto.mp3'}</p>
                           </div>
 
-                          <a
-                            href={pedido.audioUrl || '#'}
-                            download={pedido.audioName || 'audio_bruto.mp3'}
-                            target="_blank"
-                            rel="noopener noreferrer"
+                          <button
+                            onClick={() => downloadBase64File(pedido.audioUrl || '', pedido.audioName || 'audio_bruto.mp3')}
                             className="p-2.5 bg-slate-900 hover:bg-slate-800 border border-slate-800 text-cyan-400 hover:text-cyan-300 rounded-lg transition-colors cursor-pointer shrink-0 flex items-center justify-center"
                             title="Baixar Áudio Bruto"
                           >
                             <Download className="h-4 w-4" />
-                          </a>
+                          </button>
                         </div>
 
-                        {/* Common HTML5 Audio Player */}
-                        <div className="pt-2 border-t border-slate-900">
-                          <audio 
-                            controls 
-                            src={pedido.audioUrl} 
-                            className="w-full mt-2" 
-                          />
+                        {/* Custom Modern Audio Player */}
+                        <div className="pt-2 border-t border-slate-900 flex justify-end w-full">
+                          {pedido.audioUrl ? (
+                            <CustomAudioPlayer src={pedido.audioUrl} />
+                          ) : (
+                            <span className="text-xs text-slate-500 font-mono">Áudio indisponível</span>
+                          )}
                         </div>
                       </div>
                     </div>
