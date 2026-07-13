@@ -56,6 +56,8 @@ interface UserItem {
   credits: number;
   activeDiscount: number;
   isCompositorPro: boolean;
+  nome?: string;
+  role?: string;
 }
 
 interface TestimonialItem {
@@ -224,20 +226,32 @@ export default function AdminDashboard({ onLogout, onSwitchToClient }: AdminDash
       }
     });
 
-    // 5. Sync Users from localStorage (as auth/users list fallback)
-    const cachedUsers = localStorage.getItem('gi_users');
-    if (cachedUsers) {
-      setUsers(JSON.parse(cachedUsers));
-    } else {
-      const initialUsers: UserItem[] = [
-        { id: 'usr-1', name: 'Roberto Santos', email: 'roberto@email.com', credits: 5, activeDiscount: 5, isCompositorPro: true },
-        { id: 'usr-2', name: 'Bruno Lima', email: 'bruno@email.com', credits: 1, activeDiscount: 15, isCompositorPro: true },
-        { id: 'usr-3', name: 'Amanda Costa', email: 'amanda@email.com', credits: 0, activeDiscount: 0, isCompositorPro: false },
-        { id: 'usr-4', name: 'Bradokim Santos', email: 'bradokimk@gmail.com', credits: 1, activeDiscount: 0, isCompositorPro: false }
-      ];
-      localStorage.setItem('gi_users', JSON.stringify(initialUsers));
-      setUsers(initialUsers);
-    }
+    // 5. Sync Users from Firestore 'usuarios' collection in real-time
+    const unsubUsers = onSnapshot(query(collection(db, 'usuarios'), orderBy('nome')), (snapshot) => {
+      const usersList: UserItem[] = snapshot.docs.map(docSnap => {
+        const data = docSnap.data();
+        return {
+          id: docSnap.id,
+          name: data.nome || data.name || 'Sem Nome',
+          nome: data.nome || data.name || 'Sem Nome',
+          email: data.email || '',
+          credits: data.credits !== undefined ? Number(data.credits) : 0,
+          activeDiscount: data.activeDiscount !== undefined ? Number(data.activeDiscount) : 0,
+          isCompositorPro: data.isCompositorPro !== undefined ? Boolean(data.isCompositorPro) : false,
+          role: data.role || 'cliente'
+        };
+      });
+      // Filter out admins to ensure no administrative accounts are listed in the CRM
+      const filteredUsers = usersList.filter(u => u.role !== 'admin');
+      setUsers(filteredUsers);
+      localStorage.setItem('gi_users', JSON.stringify(filteredUsers));
+    }, (err) => {
+      console.error("Error querying 'usuarios' from Firestore:", err);
+      const cachedUsers = localStorage.getItem('gi_users');
+      if (cachedUsers) {
+        setUsers(JSON.parse(cachedUsers));
+      }
+    });
 
     // 6. Sync Testimonials
     const cachedTestimonials = localStorage.getItem('gi_testimonials');
@@ -279,6 +293,7 @@ export default function AdminDashboard({ onLogout, onSwitchToClient }: AdminDash
       unsubTx();
       unsubOffer();
       unsubDemos();
+      unsubUsers();
     };
   }, []);
 
@@ -454,7 +469,7 @@ export default function AdminDashboard({ onLogout, onSwitchToClient }: AdminDash
   };
 
   // ACTION 2: Present Top User
-  const handleGiftUser = (userEmail: string, userName: string) => {
+  const handleGiftUser = async (userEmail: string, userName: string) => {
     const updatedUsers = users.map(u => {
       if (u.email === userEmail) {
         return {
@@ -466,11 +481,25 @@ export default function AdminDashboard({ onLogout, onSwitchToClient }: AdminDash
     });
 
     saveUsersToDB(updatedUsers);
+
+    // Sync to Firestore if the user exists
+    const targetUser = users.find(u => u.email === userEmail);
+    if (targetUser) {
+      try {
+        const userDocRef = doc(db, 'usuarios', targetUser.id);
+        await updateDoc(userDocRef, {
+          credits: targetUser.credits + 1
+        });
+      } catch (err) {
+        console.error("Error updating user credits in Firestore:", err);
+      }
+    }
+
     showToast(`Parabéns! 1 Crédito de Guia de Presente foi enviado com sucesso para ${userName} (${userEmail})!`);
   };
 
   // ACTION 3: Approve Testimonial (Gives R$ 10 discount to client profile)
-  const handleApproveTestimonial = (testId: string, composerEmail: string, composerName: string) => {
+  const handleApproveTestimonial = async (testId: string, composerEmail: string, composerName: string) => {
     const updatedTestimonials = testimonials.map(t => {
       if (t.id === testId) {
         return { ...t, status: 'Aprovado' as const };
@@ -487,6 +516,19 @@ export default function AdminDashboard({ onLogout, onSwitchToClient }: AdminDash
       return u;
     });
     saveUsersToDB(updatedUsers);
+
+    // Sync to Firestore if the user exists
+    const targetUser = users.find(u => u.email === composerEmail);
+    if (targetUser) {
+      try {
+        const userDocRef = doc(db, 'usuarios', targetUser.id);
+        await updateDoc(userDocRef, {
+          activeDiscount: targetUser.activeDiscount + 10
+        });
+      } catch (err) {
+        console.error("Error updating user discount in Firestore:", err);
+      }
+    }
 
     showToast(`Depoimento de ${composerName} aprovado! Bônus de R$ 10,00 de desconto creditado no perfil do cliente.`);
   };
@@ -522,52 +564,68 @@ export default function AdminDashboard({ onLogout, onSwitchToClient }: AdminDash
   };
 
   // ACTION 6: Enviar Notificação Individual + Presente (CRM block B)
-  const handleSendIndividualCRM = (e: React.FormEvent) => {
+  const handleSendIndividualCRM = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!privateEmail) {
       showToast('Selecione ou insira o e-mail do cliente!');
       return;
     }
 
-    // Update credits and/or discount for the selected user
-    let found = false;
-    const updatedUsers = users.map(u => {
-      if (u.email === privateEmail) {
-        found = true;
-        return {
-          ...u,
-          credits: u.credits + Number(privateCredits || 0),
-          activeDiscount: u.activeDiscount + Number(privateDiscount || 0)
-        };
-      }
-      return u;
-    });
-
-    if (!found) {
+    // Find the user to get their current values and Firestore ID
+    const userToUpdate = users.find(u => u.email === privateEmail);
+    if (!userToUpdate) {
       showToast('E-mail do cliente não encontrado na base cadastrada!');
       return;
     }
 
-    saveUsersToDB(updatedUsers);
+    const addedCredits = Number(privateCredits || 0);
+    const addedDiscount = Number(privateDiscount || 0);
+    const newCredits = userToUpdate.credits + addedCredits;
+    const newActiveDiscount = userToUpdate.activeDiscount + addedDiscount;
 
-    // Save individual message notification in simulated database
-    const privates = JSON.parse(localStorage.getItem('gi_private_notifications') || '[]');
-    privates.push({
-      id: `p-${Date.now()}`,
-      email: privateEmail,
-      message: privateMessage,
-      creditsGifted: privateCredits,
-      discountGifted: privateDiscount,
-      date: '11/07/2026'
-    });
-    localStorage.setItem('gi_private_notifications', JSON.stringify(privates));
+    try {
+      // Update in Firestore 'usuarios' collection
+      const userDocRef = doc(db, 'usuarios', userToUpdate.id);
+      await updateDoc(userDocRef, {
+        credits: newCredits,
+        activeDiscount: newActiveDiscount
+      });
 
-    showToast(`✉️ Mensagem enviada para ${privateEmail}! Presente creditado (+${privateCredits} créditos, +R$ ${privateDiscount} desconto).`);
-    
-    // Clear fields
-    setPrivateMessage('');
-    setPrivateCredits(0);
-    setPrivateDiscount(0);
+      // Update local state and localStorage
+      const updatedUsers = users.map(u => {
+        if (u.id === userToUpdate.id) {
+          return {
+            ...u,
+            credits: newCredits,
+            activeDiscount: newActiveDiscount
+          };
+        }
+        return u;
+      });
+      saveUsersToDB(updatedUsers);
+
+      // Save individual message notification in simulated database
+      const privates = JSON.parse(localStorage.getItem('gi_private_notifications') || '[]');
+      privates.push({
+        id: `p-${Date.now()}`,
+        email: privateEmail,
+        message: privateMessage,
+        creditsGifted: privateCredits,
+        discountGifted: privateDiscount,
+        date: '11/07/2026'
+      });
+      localStorage.setItem('gi_private_notifications', JSON.stringify(privates));
+
+      showToast(`✉️ Mensagem enviada para ${privateEmail}! Presente creditado (+${privateCredits} créditos, +R$ ${privateDiscount} desconto).`);
+      
+      // Clear fields
+      setPrivateMessage('');
+      setPrivateCredits(0);
+      setPrivateDiscount(0);
+    } catch (err) {
+      console.error("Erro ao atualizar presentes no Firestore:", err);
+      showToast("Erro ao salvar presente no banco de dados.");
+    }
   };
 
   // ACTION 7: Criar Nova Ação de Bonificação (Contribute actions)
@@ -1281,7 +1339,9 @@ export default function AdminDashboard({ onLogout, onSwitchToClient }: AdminDash
                       >
                         <option value="">-- Selecione o compositor --</option>
                         {users.map(u => (
-                          <option key={u.id} value={u.email}>{u.name} ({u.email})</option>
+                          <option key={u.id} value={u.email}>
+                            {u.nome || u.name || 'Sem Nome'} ({u.email})
+                          </option>
                         ))}
                       </select>
                     </div>
