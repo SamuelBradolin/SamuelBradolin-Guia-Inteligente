@@ -10,6 +10,7 @@ import { audioSynth } from '../utils/audioSynth';
 import { createUserWithEmailAndPassword } from 'firebase/auth';
 import { doc, setDoc } from 'firebase/firestore';
 import { auth, db } from '../firebase';
+import { supabase } from '../supabase';
 
 interface WizardModalProps {
   isOpen: boolean;
@@ -208,6 +209,8 @@ export default function WizardModal({ isOpen, onClose, onSwitchToLogin }: Wizard
         const userCredential = await createUserWithEmailAndPassword(auth, formData.email, password);
         const user = userCredential.user;
 
+        const referredBy = sessionStorage.getItem('referred_by_slug') || null;
+
         // Save role: 'cliente' in usuarios collection
         await setDoc(doc(db, 'usuarios', user.uid), {
           uid: user.uid,
@@ -215,8 +218,30 @@ export default function WizardModal({ isOpen, onClose, onSwitchToLogin }: Wizard
           email: formData.email,
           telefone: formData.phone,
           role: 'cliente',
+          referred_by: referredBy,
+          discount_balance: 0.00,
           createdAt: new Date().toISOString()
         });
+
+        // Save in Supabase 'profiles' table
+        try {
+          const { error: sbProfileError } = await supabase
+            .from('profiles')
+            .upsert({
+              id: user.uid,
+              name: formData.name,
+              email: formData.email,
+              phone: formData.phone,
+              referred_by: referredBy,
+              discount_balance: 0.00,
+              created_at: new Date().toISOString()
+            });
+          if (sbProfileError) {
+            console.error("Erro ao salvar perfil no Supabase profiles:", sbProfileError);
+          }
+        } catch (sbErr) {
+          console.error("Falha ao salvar perfil no Supabase:", sbErr);
+        }
 
         setRegisterLoading(false);
         setStep(2);

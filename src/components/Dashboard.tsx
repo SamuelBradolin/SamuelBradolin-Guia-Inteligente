@@ -33,6 +33,7 @@ export default function Dashboard({ userEmail, onLogout }: DashboardProps) {
   const [userDocId, setUserDocId] = useState<string | null>(null);
   const [isCompositorPro, setIsCompositorPro] = useState(false);
   const [activeDiscount, setActiveDiscount] = useState(0);
+  const [supabaseDiscount, setSupabaseDiscount] = useState(0);
   const [globalNotice, setGlobalNotice] = useState<string | null>(null);
   const [privateNotices, setPrivateNotices] = useState<{ id: string; message: string; creditsGifted: number; discountGifted: number; date: string }[]>([]);
   
@@ -43,6 +44,51 @@ export default function Dashboard({ userEmail, onLogout }: DashboardProps) {
   
   // Real guide list synchronized with Firestore
   const [guides, setGuides] = useState<GuideItem[]>([]);
+
+  // Synchronize discount_balance from Supabase profiles table in real-time
+  useEffect(() => {
+    if (!userEmail) return;
+
+    const fetchSupabaseDiscount = async () => {
+      try {
+        const { data, error } = await supabase
+          .from('profiles')
+          .select('discount_balance')
+          .eq('email', userEmail)
+          .maybeSingle();
+        if (!error && data) {
+          setSupabaseDiscount(Number(data.discount_balance) || 0);
+        }
+      } catch (err) {
+        console.error("Erro ao carregar desconto do Supabase:", err);
+      }
+    };
+
+    fetchSupabaseDiscount();
+
+    // Set up real-time subscription for changes to this user's profile
+    const subscription = supabase
+      .channel('profile-discount-changes')
+      .on(
+        'postgres_changes',
+        {
+          event: 'UPDATE',
+          schema: 'public',
+          table: 'profiles',
+          filter: `email=eq.${userEmail}`
+        },
+        (payload) => {
+          if (payload.new && 'discount_balance' in payload.new) {
+            setSupabaseDiscount(Number(payload.new.discount_balance) || 0);
+          }
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(subscription);
+    };
+  }, [userEmail]);
 
   // Synchronizer with Firestore database
   useEffect(() => {
@@ -1503,6 +1549,20 @@ export default function Dashboard({ userEmail, onLogout }: DashboardProps) {
                       <p>
                         Indique um amigo através do seu link exclusivo. Quando seu amigo se cadastrar e fizer a primeira guia dele PAGA, você recebe um cupom de R$ 15 automaticamente no seu painel.
                       </p>
+                    </div>
+
+                    <div className="p-4 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-300 flex items-center justify-between">
+                      <div>
+                        <span className="text-[10px] font-mono uppercase tracking-wider text-[#00ff87] font-bold block">
+                          Desconto Acumulado Ativo (R$)
+                        </span>
+                        <span className="text-2xl font-black font-display text-white">
+                          R$ {supabaseDiscount.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                        </span>
+                      </div>
+                      <div className="h-10 w-10 rounded-full bg-[#00ff87]/10 flex items-center justify-center text-[#00ff87] font-bold font-mono text-xs">
+                        R$
+                      </div>
                     </div>
 
                     <div className="space-y-3 pt-2">

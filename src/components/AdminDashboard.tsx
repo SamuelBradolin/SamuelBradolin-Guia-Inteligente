@@ -95,6 +95,7 @@ export default function AdminDashboard({ onLogout, onSwitchToClient }: AdminDash
   // States for interactive actions
   const [compositions, setCompositions] = useState<CompositionItem[]>([]);
   const [users, setUsers] = useState<UserItem[]>([]);
+  const [supabaseDiscounts, setSupabaseDiscounts] = useState<Record<string, number>>({});
   const [testimonials, setTestimonials] = useState<TestimonialItem[]>([]);
   const [promoActions, setPromoActions] = useState<PromoAction[]>([]);
   const [homeDemos, setHomeDemos] = useState<HomeDemoTrack[]>([]);
@@ -149,6 +150,50 @@ export default function AdminDashboard({ onLogout, onSwitchToClient }: AdminDash
     setSuccessToast(msg);
     setTimeout(() => setSuccessToast(null), 4000);
   };
+
+  // Fetch and subscribe to all user discount balances from Supabase profiles
+  useEffect(() => {
+    const fetchSupabaseDiscounts = async () => {
+      try {
+        const { data, error } = await supabase
+          .from('profiles')
+          .select('email, discount_balance');
+        if (!error && data) {
+          const discountMap: Record<string, number> = {};
+          data.forEach(p => {
+            if (p.email) {
+              discountMap[p.email.toLowerCase()] = Number(p.discount_balance) || 0;
+            }
+          });
+          setSupabaseDiscounts(discountMap);
+        }
+      } catch (err) {
+        console.error("Erro ao buscar saldos de desconto no Supabase:", err);
+      }
+    };
+
+    fetchSupabaseDiscounts();
+
+    // Set up real-time Postgres changes for real-time updates on profiles
+    const subscription = supabase
+      .channel('admin-profiles-changes')
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'profiles'
+        },
+        () => {
+          fetchSupabaseDiscounts();
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(subscription);
+    };
+  }, []);
 
   // Load and Initialize real databases synced through Firestore
   useEffect(() => {
@@ -1232,7 +1277,7 @@ export default function AdminDashboard({ onLogout, onSwitchToClient }: AdminDash
                             {usr.credits} {usr.credits === 1 ? 'crédito' : 'créditos'}
                           </td>
                           <td className="py-4 px-6 font-mono font-bold text-emerald-400">
-                            R$ {usr.activeDiscount},00
+                            R$ {(supabaseDiscounts[usr.email.toLowerCase()] !== undefined ? supabaseDiscounts[usr.email.toLowerCase()] : usr.activeDiscount).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
                           </td>
                           <td className="py-4 px-6 text-right">
                             <button

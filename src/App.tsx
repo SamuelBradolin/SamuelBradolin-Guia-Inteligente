@@ -42,8 +42,23 @@ export default function App() {
   const [currentPath, setCurrentPath] = useState(window.location.pathname);
 
   useEffect(() => {
+    // Capture referral slug if present in the URL
+    if (window.location.pathname.includes('/convite/')) {
+      const referralSlug = window.location.pathname.split('/convite/')[1];
+      if (referralSlug) {
+        sessionStorage.setItem('referred_by_slug', referralSlug);
+      }
+    }
+
     const handlePopState = () => {
-      setCurrentPath(window.location.pathname);
+      const path = window.location.pathname;
+      setCurrentPath(path);
+      if (path.includes('/convite/')) {
+        const referralSlug = path.split('/convite/')[1];
+        if (referralSlug) {
+          sessionStorage.setItem('referred_by_slug', referralSlug);
+        }
+      }
     };
     window.addEventListener('popstate', handlePopState);
     return () => window.removeEventListener('popstate', handlePopState);
