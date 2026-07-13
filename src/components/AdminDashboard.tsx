@@ -132,6 +132,8 @@ export default function AdminDashboard({ onLogout, onSwitchToClient }: AdminDash
   const [newDemoCurated, setNewDemoCurated] = useState('');
   const [uploadedOriginalFile, setUploadedOriginalFile] = useState<string | null>(null);
   const [uploadedCuratedFile, setUploadedCuratedFile] = useState<string | null>(null);
+  const [isUploadingOriginal, setIsUploadingOriginal] = useState(false);
+  const [isUploadingCurated, setIsUploadingCurated] = useState(false);
 
   // Production Detail Modal State
   const [selectedComp, setSelectedComp] = useState<CompositionItem | null>(null);
@@ -320,9 +322,16 @@ export default function AdminDashboard({ onLogout, onSwitchToClient }: AdminDash
     localStorage.setItem('gi_promo_actions', JSON.stringify(newActions));
   };
 
-  const saveHomeDemosToDB = (newDemos: HomeDemoTrack[]) => {
+  const saveHomeDemosToDB = async (newDemos: HomeDemoTrack[]) => {
     setHomeDemos(newDemos);
     localStorage.setItem('gi_home_demos', JSON.stringify(newDemos));
+    try {
+      await setDoc(doc(db, 'configuracoes', 'home_demos'), {
+        tracks: newDemos
+      });
+    } catch (err) {
+      console.error("Erro ao salvar demos de áudio no Firestore:", err);
+    }
   };
 
   const convertFileToBase64 = (file: File | Blob): Promise<string> => {
@@ -670,6 +679,65 @@ export default function AdminDashboard({ onLogout, onSwitchToClient }: AdminDash
     const filtered = promoActions.filter(a => a.id !== actionId);
     savePromoActionsToDB(filtered);
     showToast('Ação de bonificação removida com sucesso!');
+  };
+
+  const handleUploadDemoFile = async (type: 'original' | 'curated') => {
+    const fileInput = document.createElement('input');
+    fileInput.type = 'file';
+    fileInput.accept = 'audio/*';
+
+    fileInput.onchange = async (e: Event) => {
+      const target = e.target as HTMLInputElement;
+      if (!target.files || target.files.length === 0) return;
+      const file = target.files[0];
+
+      const isOriginal = type === 'original';
+      if (isOriginal) {
+        setIsUploadingOriginal(true);
+      } else {
+        setIsUploadingCurated(true);
+      }
+
+      try {
+        const fileExt = file.name.split('.').pop() || 'mp3';
+        const uniqueFileName = `${Date.now()}-${Math.random().toString(36).substring(2, 15)}.${fileExt}`;
+        const filePath = `demonstracoes/${type}_${uniqueFileName}`;
+
+        const { data, error } = await supabase.storage
+          .from('audios')
+          .upload(filePath, file, {
+            cacheControl: '3600',
+            upsert: false
+          });
+
+        if (error) {
+          throw error;
+        }
+
+        const { data: { publicUrl } } = supabase.storage
+          .from('audios')
+          .getPublicUrl(filePath);
+
+        if (isOriginal) {
+          setUploadedOriginalFile(publicUrl);
+          showToast('Áudio original carregado com sucesso!');
+        } else {
+          setUploadedCuratedFile(publicUrl);
+          showToast('Guia final profissional carregada com sucesso!');
+        }
+      } catch (err) {
+        console.error("Erro no upload do áudio da demo:", err);
+        showToast("Falha ao carregar o arquivo para o Supabase Storage.");
+      } finally {
+        if (isOriginal) {
+          setIsUploadingOriginal(false);
+        } else {
+          setIsUploadingCurated(false);
+        }
+      }
+    };
+
+    fileInput.click();
   };
 
   // ACTION 8: Adicionar Novo Exemplo de Áudio (Home demo manager)
@@ -1669,18 +1737,15 @@ export default function AdminDashboard({ onLogout, onSwitchToClient }: AdminDash
                               placeholder="Nenhum arquivo"
                               readOnly
                               value={uploadedOriginalFile || ''}
-                              className="flex-1 px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-[11px] text-slate-400 font-mono"
+                              className="flex-1 px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-[11px] text-slate-400 font-mono truncate"
                             />
                             <button
                               type="button"
-                              onClick={() => {
-                                const files = ['whatsapp_roberto.mp3', 'gravacao_celular_samba.wav', 'voz_bruta.mp3'];
-                                setUploadedOriginalFile(files[Math.floor(Math.random() * files.length)]);
-                                showToast('Áudio original carregado!');
-                              }}
-                              className="px-3 py-2 bg-slate-900 border border-slate-800 hover:border-slate-700 text-slate-300 rounded-lg font-mono text-[10px] uppercase cursor-pointer"
+                              disabled={isUploadingOriginal}
+                              onClick={() => handleUploadDemoFile('original')}
+                              className="px-3 py-2 bg-slate-900 border border-slate-800 hover:border-slate-700 text-slate-300 rounded-lg font-mono text-[10px] uppercase cursor-pointer disabled:opacity-50 min-w-[85px] flex items-center justify-center"
                             >
-                              Simular
+                              {isUploadingOriginal ? 'Subindo...' : 'Carregar'}
                             </button>
                           </div>
                         </div>
@@ -1693,18 +1758,15 @@ export default function AdminDashboard({ onLogout, onSwitchToClient }: AdminDash
                               placeholder="Nenhum arquivo"
                               readOnly
                               value={uploadedCuratedFile || ''}
-                              className="flex-1 px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-[11px] text-slate-400 font-mono"
+                              className="flex-1 px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-[11px] text-slate-400 font-mono truncate"
                             />
                             <button
                               type="button"
-                              onClick={() => {
-                                const files = ['guia_final_masculino.wav', 'guia_final_feminino.wav', 'guia_final_acustico.wav'];
-                                setUploadedCuratedFile(files[Math.floor(Math.random() * files.length)]);
-                                showToast('Guia final profissional carregada!');
-                              }}
-                              className="px-3 py-2 bg-slate-900 border border-slate-800 hover:border-slate-700 text-slate-300 rounded-lg font-mono text-[10px] uppercase cursor-pointer"
+                              disabled={isUploadingCurated}
+                              onClick={() => handleUploadDemoFile('curated')}
+                              className="px-3 py-2 bg-slate-900 border border-slate-800 hover:border-slate-700 text-slate-300 rounded-lg font-mono text-[10px] uppercase cursor-pointer disabled:opacity-50 min-w-[85px] flex items-center justify-center"
                             >
-                              Simular
+                              {isUploadingCurated ? 'Subindo...' : 'Carregar'}
                             </button>
                           </div>
                         </div>
