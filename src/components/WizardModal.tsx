@@ -209,7 +209,7 @@ export default function WizardModal({ isOpen, onClose, onSwitchToLogin }: Wizard
         const userCredential = await createUserWithEmailAndPassword(auth, formData.email, password);
         const user = userCredential.user;
 
-        const referredBy = sessionStorage.getItem('referred_by_slug') || null;
+        const referredBy = sessionStorage.getItem('referred_by_slug') || localStorage.getItem('referred_by_slug') || null;
 
         // Save role: 'cliente' in usuarios collection
         await setDoc(doc(db, 'usuarios', user.uid), {

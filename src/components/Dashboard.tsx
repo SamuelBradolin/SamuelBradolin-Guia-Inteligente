@@ -668,7 +668,8 @@ export default function Dashboard({ userEmail, onLogout }: DashboardProps) {
   };
 
   const handleCopyInviteLink = () => {
-    const link = `guiainteligente.com/convite/${composerName.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/\s+/g, '') || 'musico'}123`;
+    const baseUrl = window.location.origin;
+    const link = `${baseUrl}/convite/${composerName.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/\s+/g, '') || 'musico'}123`;
     navigator.clipboard.writeText(link);
     setCopiedInviteLink(true);
     showToast('Link de indicação copiado com sucesso!');
@@ -1573,13 +1574,13 @@ export default function Dashboard({ userEmail, onLogout }: DashboardProps) {
                         <input
                           type="text"
                           readOnly
-                          value={`guiainteligente.com/convite/${composerName.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/\s+/g, '') || 'musico'}123`}
+                          value={`${window.location.origin}/convite/${composerName.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/\s+/g, '') || 'musico'}123`}
                           className="w-full pl-4 pr-12 py-3 bg-[#14181f] border border-slate-800 focus:outline-none rounded-xl text-xs text-slate-300 font-mono select-all"
                         />
                         <button
                           type="button"
                           onClick={() => {
-                            const link = `guiainteligente.com/convite/${composerName.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/\s+/g, '') || 'musico'}123`;
+                            const link = `${window.location.origin}/convite/${composerName.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/\s+/g, '') || 'musico'}123`;
                             navigator.clipboard.writeText(link);
                             showToast('Link de indicação copiado!');
                           }}

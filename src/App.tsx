@@ -42,23 +42,39 @@ export default function App() {
   const [currentPath, setCurrentPath] = useState(window.location.pathname);
 
   useEffect(() => {
-    // Capture referral slug if present in the URL
-    if (window.location.pathname.includes('/convite/')) {
-      const referralSlug = window.location.pathname.split('/convite/')[1];
-      if (referralSlug) {
-        sessionStorage.setItem('referred_by_slug', referralSlug);
-      }
-    }
-
-    const handlePopState = () => {
-      const path = window.location.pathname;
-      setCurrentPath(path);
+    const checkPathAndReferral = (path: string) => {
+      // Capture referral if matching /convite/
       if (path.includes('/convite/')) {
         const referralSlug = path.split('/convite/')[1];
         if (referralSlug) {
           sessionStorage.setItem('referred_by_slug', referralSlug);
+          localStorage.setItem('referred_by_slug', referralSlug);
+          
+          // Redirect immediately to home page cleanly and open registration wizard
+          window.history.replaceState({}, '', '/');
+          setCurrentPath('/');
+          setIsWizardOpen(true);
+          return true;
         }
       }
+
+      // Handle direct registration routes
+      if (path === '/cadastro' || path === '/registrar') {
+        window.history.replaceState({}, '', '/');
+        setCurrentPath('/');
+        setIsWizardOpen(true);
+        return true;
+      }
+      return false;
+    };
+
+    // Run initial check
+    checkPathAndReferral(window.location.pathname);
+
+    const handlePopState = () => {
+      const path = window.location.pathname;
+      setCurrentPath(path);
+      checkPathAndReferral(path);
     };
     window.addEventListener('popstate', handlePopState);
     return () => window.removeEventListener('popstate', handlePopState);
