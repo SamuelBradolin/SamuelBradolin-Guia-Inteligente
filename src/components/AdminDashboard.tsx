@@ -165,6 +165,14 @@ export default function AdminDashboard({ onLogout, onSwitchToClient }: AdminDash
   const [offerBenefit4, setOfferBenefit4] = useState('Direitos autorais e comerciais 100% seus. Você é totalmente dono da obra e do áudio gerado. Use a guia livremente para postar, registrar ou divulgar onde quiser.');
   const [offerBtnText, setOfferBtnText] = useState('[ CRIAR MINHA CONTA E GANHAR 1 GUIA GRÁTIS ]');
 
+  // Gamification Home Section Text States
+  const [gamificationTitle, setGamificationTitle] = useState(() => {
+    return localStorage.getItem('gi_gamification_title') || 'Suba de Nível e Ganhe Dinheiro';
+  });
+  const [gamificationSubtitle, setGamificationSubtitle] = useState(() => {
+    return localStorage.getItem('gi_gamification_subtitle') || 'Conheça o nosso programa de fidelidade e acelere seus ganhos indicando outros compositores.';
+  });
+
   // New Bonus Action form state
   const [showAddAction, setShowAddAction] = useState(false);
   const [newActionTitle, setNewActionTitle] = useState('');
@@ -512,8 +520,62 @@ export default function AdminDashboard({ onLogout, onSwitchToClient }: AdminDash
     }
   };
 
+  const fetchSiteSettings = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('site_settings')
+        .select('*');
+
+      if (!error && data) {
+        const titleRow = data.find((r: any) => r.key === 'gamification_title');
+        const subtitleRow = data.find((r: any) => r.key === 'gamification_subtitle');
+
+        if (titleRow) {
+          setGamificationTitle(titleRow.value);
+          localStorage.setItem('gi_gamification_title', titleRow.value);
+        }
+        if (subtitleRow) {
+          setGamificationSubtitle(subtitleRow.value);
+          localStorage.setItem('gi_gamification_subtitle', subtitleRow.value);
+        }
+      }
+    } catch (err) {
+      console.error("Erro ao carregar configurações do site:", err);
+    }
+  };
+
+  const handleSaveSiteSettings = async (e: React.FormEvent) => {
+    e.preventDefault();
+    try {
+      localStorage.setItem('gi_gamification_title', gamificationTitle);
+      localStorage.setItem('gi_gamification_subtitle', gamificationSubtitle);
+
+      // Attempt upsert in Supabase
+      const { error } = await supabase
+        .from('site_settings')
+        .upsert([
+          { key: 'gamification_title', value: gamificationTitle },
+          { key: 'gamification_subtitle', value: gamificationSubtitle }
+        ], { onConflict: 'key' });
+
+      if (error) {
+        console.warn("Erro ao salvar site_settings no Supabase:", error);
+        showToast("✓ Salvo localmente! Crie a tabela 'site_settings' no SQL Editor do Supabase se quiser persistência em nuvem.");
+      } else {
+        showToast("✓ Configurações de textos da Home salvas com sucesso!");
+      }
+      
+      // Dispatch storage event manually so other components hear it immediately
+      window.dispatchEvent(new Event('storage'));
+    } catch (err) {
+      console.error("Erro geral ao salvar site_settings:", err);
+      showToast("Erro ao processar salvamento das configurações.");
+    }
+  };
+
   useEffect(() => {
     fetchGamificationRules();
+    fetchSiteSettings();
   }, []);
 
   const handleMarkAsPaid = async (requestId: string) => {
@@ -2698,6 +2760,55 @@ export default function AdminDashboard({ onLogout, onSwitchToClient }: AdminDash
                       className="px-5 py-3 bg-blue-600 hover:bg-blue-500 text-white font-extrabold font-mono text-xs uppercase tracking-wider rounded-xl transition-all flex items-center gap-2 cursor-pointer shadow-[0_4px_15px_rgba(37,99,235,0.15)] hover:shadow-[0_4px_25px_rgba(37,99,235,0.3)] active:scale-[0.98]"
                     >
                       <span>[ 💾 Salvar Alterações do Card de Preço ]</span>
+                    </button>
+                  </div>
+                </form>
+              </div>
+
+              {/* SECTION: 🏆 Gerenciar Textos da Seção de Níveis (Home) */}
+              <div className="bg-[#111419]/40 border border-slate-900 rounded-2xl p-6 space-y-6">
+                <div className="border-b border-slate-900 pb-4">
+                  <span className="text-[9px] font-mono font-bold tracking-widest text-[#00ff87] uppercase">PROGRAMA DE FIDELIDADE & GAMIFICAÇÃO</span>
+                  <h3 className="font-display font-bold text-white text-base mt-0.5">🏆 Gerenciar Textos da Seção de Níveis (Home)</h3>
+                  <p className="text-slate-400 text-xs mt-1">
+                    Edite o título e o subtítulo da seção de fidelidade (Bronze, Prata, Ouro) exibida na página inicial.
+                  </p>
+                </div>
+
+                <form onSubmit={handleSaveSiteSettings} className="space-y-4">
+                  {/* Título da Seção */}
+                  <div className="space-y-1.5">
+                    <label className="block text-[10px] font-mono text-slate-400 font-bold uppercase">Título da Seção</label>
+                    <input
+                      type="text"
+                      required
+                      value={gamificationTitle}
+                      onChange={(e) => setGamificationTitle(e.target.value)}
+                      className="w-full px-4 py-2.5 bg-[#14181f] border border-slate-800 focus:border-[#00ff87]/50 rounded-lg text-xs text-white focus:outline-none"
+                      placeholder="Ex: Suba de Nível e Ganhe Dinheiro"
+                    />
+                  </div>
+
+                  {/* Subtítulo da Seção */}
+                  <div className="space-y-1.5">
+                    <label className="block text-[10px] font-mono text-slate-400 font-bold uppercase">Subtítulo da Seção</label>
+                    <textarea
+                      required
+                      value={gamificationSubtitle}
+                      onChange={(e) => setGamificationSubtitle(e.target.value)}
+                      rows={3}
+                      className="w-full px-4 py-2.5 bg-[#14181f] border border-slate-800 focus:border-[#00ff87]/50 rounded-lg text-xs text-white focus:outline-none resize-none"
+                      placeholder="Ex: Conheça o nosso programa de fidelidade e acelere seus ganhos indicando outros compositores."
+                    />
+                  </div>
+
+                  {/* Submit Button */}
+                  <div className="pt-4 border-t border-slate-900 flex justify-end">
+                    <button
+                      type="submit"
+                      className="px-5 py-3 bg-blue-600 hover:bg-blue-500 text-white font-extrabold font-mono text-xs uppercase tracking-wider rounded-xl transition-all flex items-center gap-2 cursor-pointer shadow-[0_4px_15px_rgba(37,99,235,0.15)] hover:shadow-[0_4px_25px_rgba(37,99,235,0.3)] active:scale-[0.98]"
+                    >
+                      <span>[ 💾 Salvar Alterações da Seção de Níveis ]</span>
                     </button>
                   </div>
                 </form>

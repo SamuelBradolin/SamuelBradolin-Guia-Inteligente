@@ -9,6 +9,7 @@ import Header from './components/Header';
 import Footer from './components/Footer';
 import AudioDemoSection from './components/AudioDemoSection';
 import HowItWorks from './components/HowItWorks';
+import GamificationSection from './components/GamificationSection';
 import PriceSection from './components/PriceSection';
 import WizardModal from './components/WizardModal';
 import LoginModal from './components/LoginModal';
@@ -401,6 +402,9 @@ export default function App() {
 
         {/* HOW IT WORKS SECTION */}
         <HowItWorks />
+
+        {/* GAMIFICATION LEVEL CARD SECTION */}
+        <GamificationSection />
 
         {/* PRICING SECTION */}
         <PriceSection onTriggerCTA={openWizard} />
