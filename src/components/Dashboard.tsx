@@ -4,7 +4,7 @@ import {
   User, Music, PlusCircle, Settings, LogOut, Download, 
   Sparkles, Smartphone, CheckCircle, Calendar, Upload, 
   FileText, Mic, Guitar, Info, QrCode, Copy, Check, X,
-  Plus, Camera
+  Plus, Camera, CreditCard
 } from 'lucide-react';
 import { collection, query, where, onSnapshot, addDoc, doc, updateDoc, serverTimestamp } from 'firebase/firestore';
 import { db } from '../firebase';
@@ -198,6 +198,7 @@ export default function Dashboard({ userEmail, onLogout }: DashboardProps) {
   const [copiedPix, setCopiedPix] = useState(false);
   const [showPromoPixModal, setShowPromoPixModal] = useState(false);
   const [copiedPromoPix, setCopiedPromoPix] = useState(false);
+  const [showRechargeModal, setShowRechargeModal] = useState(false);
   const [successToast, setSuccessToast] = useState<string | null>(null);
 
   const handleFileUploadClick = () => {
@@ -726,6 +727,15 @@ export default function Dashboard({ userEmail, onLogout }: DashboardProps) {
                 Saldo: {credits} {credits === 1 ? 'Guia' : 'Guias'} {isCompositorPro && '⚡'}
               </span>
             </div>
+
+            {/* Recharge button */}
+            <button
+              onClick={() => setShowRechargeModal(true)}
+              className="w-full mt-2.5 py-2.5 px-3 rounded-lg bg-gradient-to-r from-[#00ff87] to-[#00e076] hover:from-[#00ff87]/90 hover:to-[#00e076]/90 text-black font-extrabold font-mono text-xs uppercase tracking-wider transition-all duration-300 shadow-[0_4px_15px_rgba(0,255,135,0.15)] hover:shadow-[0_4px_20px_rgba(0,255,135,0.35)] cursor-pointer flex items-center justify-center gap-1.5 active:scale-[0.98]"
+            >
+              <CreditCard className="h-4 w-4" />
+              <span>Recarregar Conta</span>
+            </button>
           </div>
 
           {/* MENU ITEMS */}
@@ -1761,6 +1771,89 @@ export default function Dashboard({ userEmail, onLogout }: DashboardProps) {
               <p className="text-[9px] text-center text-slate-500 font-mono flex items-center justify-center gap-1">
                 <Smartphone className="h-3.5 w-3.5 text-[#00ff87]" />
                 <span>PROCESSAMENTO INSTANTÂNEO • MERCADO PAGO</span>
+              </p>
+
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* SELEÇÃO DE PLANOS / RECARREGAR CONTA MODAL */}
+      <AnimatePresence>
+        {showRechargeModal && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/90 backdrop-blur-md overflow-y-auto">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              className="w-full max-w-md bg-[#111419] border border-slate-850 rounded-2xl overflow-hidden relative shadow-2xl p-6 md:p-8 space-y-6 animate-none"
+            >
+              <button
+                onClick={() => setShowRechargeModal(false)}
+                className="absolute top-4 right-4 text-slate-500 hover:text-white cursor-pointer"
+              >
+                <X className="h-5 w-5" />
+              </button>
+
+              <div className="text-center space-y-2">
+                <div className="h-12 w-12 rounded-full bg-[#00ff87]/15 text-[#00ff87] flex items-center justify-center mx-auto border border-[#00ff87]/20">
+                  <CreditCard className="h-6 w-6 animate-pulse" />
+                </div>
+                <h3 className="font-display text-lg font-extrabold text-white">Recarregar Créditos de Guia</h3>
+                <p className="text-xs text-slate-400 max-w-xs mx-auto">
+                  Adquira créditos adicionais para registrar suas composições na plataforma com curadoria profissional de voz e violão.
+                </p>
+              </div>
+
+              <div className="p-4 rounded-xl bg-[#00ff87]/5 border border-[#00ff87]/15 text-center text-xs font-mono text-slate-300">
+                Selecione seu plano: 1 Guia Avulsa por R$ 49,90 ou Combo Promocional (Pague 4, Leve 5) por R$ 170,00.
+              </div>
+
+              <div className="space-y-3">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowRechargeModal(false);
+                    setShowPixModal(true);
+                  }}
+                  className="w-full p-4 rounded-xl bg-slate-900 border border-slate-800 hover:border-slate-700 text-left transition-all duration-300 flex items-center justify-between group cursor-pointer"
+                >
+                  <div className="space-y-0.5">
+                    <p className="text-xs font-bold text-white group-hover:text-[#00ff87] transition-colors">1 Guia Avulsa</p>
+                    <p className="text-[10px] text-slate-500 font-mono">Para testar um único arranjo</p>
+                  </div>
+                  <div className="text-right">
+                    <p className="text-sm font-black text-white font-mono">R$ 49,90</p>
+                    <p className="text-[9px] font-mono text-[#00ff87] font-bold">SOLICITAR AVULSO ➔</p>
+                  </div>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowRechargeModal(false);
+                    setShowPromoPixModal(true);
+                  }}
+                  className="w-full p-4 rounded-xl bg-gradient-to-r from-emerald-500/10 to-cyan-500/10 border border-[#00ff87]/30 hover:border-[#00ff87]/60 text-left transition-all duration-300 flex items-center justify-between group cursor-pointer relative overflow-hidden"
+                >
+                  <div className="absolute top-0 right-10 bg-[#00ff87] text-black font-mono font-extrabold text-[8px] px-2 py-0.5 rounded-b uppercase tracking-wider">
+                    Melhor Custo
+                  </div>
+                  <div className="space-y-0.5">
+                    <p className="text-xs font-bold text-white group-hover:text-[#00ff87] transition-colors">Combo Promocional</p>
+                    <p className="text-[10px] text-slate-400 font-mono">Pague 4, Leve 5 Guias</p>
+                  </div>
+                  <div className="text-right">
+                    <p className="text-sm font-black text-[#00ff87] font-mono">R$ 170,00</p>
+                    <p className="text-[9px] font-mono text-cyan-400 font-bold">SOLICITAR COMBO ➔</p>
+                  </div>
+                </button>
+              </div>
+
+              {/* Extra visual trust note */}
+              <p className="text-[9px] text-center text-slate-500 font-mono flex items-center justify-center gap-1 pt-2">
+                <Smartphone className="h-3.5 w-3.5 text-[#00ff87]" />
+                <span>MERCADO PAGO • CRÉDITOS LIBERADOS EM SEGUNDOS</span>
               </p>
 
             </motion.div>
