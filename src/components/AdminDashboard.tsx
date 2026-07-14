@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
   Music, Users, MessageSquare, Megaphone, Gift, Sliders, 
-  X, Upload, Download, Search, Sparkles, Plus, Trash2, 
+  X, Upload, Download, Search, Sparkles, Plus, Trash2, Pencil,
   CheckCircle, Eye, Volume2, Copy, Play, Pause, DollarSign,
   Briefcase, Send, Layers, Award, Radio, TrendingUp, CreditCard, Landmark
 } from 'lucide-react';
@@ -183,6 +183,15 @@ export default function AdminDashboard({ onLogout, onSwitchToClient }: AdminDash
   const [isUploadingCurated, setIsUploadingCurated] = useState(false);
   const [hasLoadedOriginal, setHasLoadedOriginal] = useState(false);
   const [hasLoadedCurated, setHasLoadedCurated] = useState(false);
+
+  // Edit Home Demo states
+  const [editingDemo, setEditingDemo] = useState<HomeDemoTrack | null>(null);
+  const [editDemoTitle, setEditDemoTitle] = useState('');
+  const [editDemoGenre, setEditDemoGenre] = useState('');
+  const [editDemoOriginalText, setEditDemoOriginalText] = useState('');
+  const [editDemoOriginalAudio, setEditDemoOriginalAudio] = useState('');
+  const [editDemoCuratedText, setEditDemoCuratedText] = useState('');
+  const [editDemoCuratedAudio, setEditDemoCuratedAudio] = useState('');
 
   // Production Detail Modal State
   const [selectedComp, setSelectedComp] = useState<CompositionItem | null>(null);
@@ -1228,6 +1237,87 @@ export default function AdminDashboard({ onLogout, onSwitchToClient }: AdminDash
     const filtered = homeDemos.filter(d => d.id !== demoId);
     saveHomeDemosToDB(filtered);
     showToast('Exemplo de áudio removido do gerenciador da home!');
+  };
+
+  const handleOpenEditDemo = (demo: HomeDemoTrack) => {
+    setEditingDemo(demo);
+    setEditDemoTitle(demo.title);
+    setEditDemoGenre(demo.genre);
+    setEditDemoOriginalText(demo.originalText);
+    setEditDemoOriginalAudio(demo.originalAudioName || '');
+    setEditDemoCuratedText(demo.curatedText);
+    setEditDemoCuratedAudio(demo.curatedAudioName || '');
+  };
+
+  const handleSaveEditDemo = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingDemo) return;
+
+    const updatedDemo: HomeDemoTrack = {
+      id: editingDemo.id,
+      title: editDemoTitle,
+      genre: editDemoGenre,
+      originalText: editDemoOriginalText,
+      curatedText: editDemoCuratedText,
+      originalAudioName: editDemoOriginalAudio,
+      curatedAudioName: editDemoCuratedAudio
+    };
+
+    try {
+      // 1. Update in Supabase tables
+      const { error: errorDem } = await supabase
+        .from('demonstracoes')
+        .update({
+          title: editDemoTitle,
+          genre: editDemoGenre,
+          originalText: editDemoOriginalText,
+          curatedText: editDemoCuratedText,
+          originalAudioName: editDemoOriginalAudio,
+          curatedAudioName: editDemoCuratedAudio
+        })
+        .eq('id', editingDemo.id);
+
+      const { error: errorAnt } = await supabase
+        .from('antes_depois')
+        .update({
+          title: editDemoTitle,
+          genre: editDemoGenre,
+          originalText: editDemoOriginalText,
+          curatedText: editDemoCuratedText,
+          originalAudioName: editDemoOriginalAudio,
+          curatedAudioName: editDemoCuratedAudio
+        })
+        .eq('id', editingDemo.id);
+
+      if (errorDem && errorAnt) {
+        console.warn("Supabase update errors:", errorDem, errorAnt);
+      }
+    } catch (err) {
+      console.error("Erro geral no Supabase update:", err);
+    }
+
+    try {
+      // 2. Persist in 'demonstracoes' collection
+      await setDoc(doc(db, 'demonstracoes', editingDemo.id), {
+        ...updatedDemo,
+        updatedAt: new Date().toISOString()
+      }, { merge: true });
+
+      // Persist in 'antes_depois' collection
+      await setDoc(doc(db, 'antes_depois', editingDemo.id), {
+        ...updatedDemo,
+        updatedAt: new Date().toISOString()
+      }, { merge: true });
+    } catch (err) {
+      console.error("Erro ao salvar no Firestore:", err);
+    }
+
+    // 3. Save to configurations and localState
+    const updatedDemos = homeDemos.map(d => d.id === editingDemo.id ? updatedDemo : d);
+    await saveHomeDemosToDB(updatedDemos);
+
+    showToast(`Exemplo de áudio "${editDemoTitle}" atualizado com sucesso!`);
+    setEditingDemo(null);
   };
 
   // ACTION 9: Salvar Alterações do Card de Preço (Home pricing manager)
@@ -2423,13 +2513,22 @@ export default function AdminDashboard({ onLogout, onSwitchToClient }: AdminDash
                       key={demo.id} 
                       className="bg-slate-950/60 border border-slate-900 rounded-xl p-5 space-y-4 relative"
                     >
-                      <button
-                        onClick={() => handleDeleteHomeDemo(demo.id)}
-                        className="absolute top-4 right-4 p-1.5 text-slate-500 hover:text-red-400 rounded-lg hover:bg-slate-900 transition-colors cursor-pointer"
-                        title="Excluir exemplo"
-                      >
-                        <Trash2 className="h-4.5 w-4.5" />
-                      </button>
+                      <div className="absolute top-4 right-4 flex items-center gap-2">
+                        <button
+                          onClick={() => handleOpenEditDemo(demo)}
+                          className="p-1.5 text-slate-400 hover:text-[#00ff87] rounded-lg hover:bg-slate-900 transition-colors cursor-pointer"
+                          title="Editar exemplo"
+                        >
+                          <Pencil className="h-4 w-4" />
+                        </button>
+                        <button
+                          onClick={() => handleDeleteHomeDemo(demo.id)}
+                          className="p-1.5 text-slate-500 hover:text-red-400 rounded-lg hover:bg-slate-900 transition-colors cursor-pointer"
+                          title="Excluir exemplo"
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </button>
+                      </div>
 
                       <div className="space-y-1">
                         <h4 className="font-bold text-white font-display text-base">{demo.title}</h4>
@@ -3408,6 +3507,136 @@ export default function AdminDashboard({ onLogout, onSwitchToClient }: AdminDash
                 </>
               )}
 
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* MODAL: Editar Exemplo Antes / Depois */}
+      <AnimatePresence>
+        {editingDemo && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/95 backdrop-blur-md overflow-y-auto animate-none">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              className="w-full max-w-xl bg-[#111419] border border-slate-850 rounded-2xl overflow-hidden relative shadow-2xl p-6 md:p-8 space-y-6 my-auto"
+            >
+              {/* Close Button */}
+              <button
+                type="button"
+                onClick={() => setEditingDemo(null)}
+                className="absolute top-4 right-4 text-slate-500 hover:text-white transition-colors cursor-pointer"
+                title="Fechar"
+              >
+                <X className="h-5 w-5" />
+              </button>
+
+              {/* Title */}
+              <div>
+                <span className="text-[9px] font-mono font-bold text-[#00ff87] uppercase tracking-widest block">ADMINISTRAÇÃO DE CONTEÚDO</span>
+                <h3 className="font-display font-black text-xl text-white mt-1">Editar Exemplo Antes / Depois</h3>
+                <p className="text-xs text-slate-400 mt-1">Altere as informações do card de demonstração de áudio.</p>
+              </div>
+
+              <form onSubmit={handleSaveEditDemo} className="space-y-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  {/* Nome do Autor/Exemplo */}
+                  <div className="space-y-1.5">
+                    <label className="block text-[10px] font-mono text-slate-400 font-bold uppercase">Nome</label>
+                    <input
+                      type="text"
+                      required
+                      value={editDemoTitle}
+                      onChange={(e) => setEditDemoTitle(e.target.value)}
+                      placeholder="Ex: Maicon Souza"
+                      className="w-full px-3 py-2 bg-[#0c0f13] border border-slate-800 focus:border-[#00ff87]/50 rounded-lg text-xs text-white focus:outline-none"
+                    />
+                  </div>
+
+                  {/* Gênero Musical */}
+                  <div className="space-y-1.5">
+                    <label className="block text-[10px] font-mono text-slate-400 font-bold uppercase">Gênero Musical</label>
+                    <input
+                      type="text"
+                      required
+                      value={editDemoGenre}
+                      onChange={(e) => setEditDemoGenre(e.target.value)}
+                      placeholder="Ex: PAGODE"
+                      className="w-full px-3 py-2 bg-[#0c0f13] border border-slate-800 focus:border-[#00ff87]/50 rounded-lg text-xs text-white focus:outline-none"
+                    />
+                  </div>
+                </div>
+
+                {/* Original Mobile Text / Info */}
+                <div className="space-y-1.5">
+                  <label className="block text-[10px] font-mono text-slate-400 font-bold uppercase">Descrição do Celular Original</label>
+                  <input
+                    type="text"
+                    required
+                    value={editDemoOriginalText}
+                    onChange={(e) => setEditDemoOriginalText(e.target.value)}
+                    placeholder="Ex: Voz e cavaquinho batido no celular"
+                    className="w-full px-3 py-2 bg-[#0c0f13] border border-slate-800 focus:border-[#00ff87]/50 rounded-lg text-xs text-white focus:outline-none"
+                  />
+                </div>
+
+                {/* Original Audio File Link */}
+                <div className="space-y-1.5">
+                  <label className="block text-[10px] font-mono text-slate-400 font-bold uppercase">Link do Áudio Original (URL)</label>
+                  <input
+                    type="text"
+                    required
+                    value={editDemoOriginalAudio}
+                    onChange={(e) => setEditDemoOriginalAudio(e.target.value)}
+                    placeholder="Link do arquivo de áudio (Firebase Storage ou externo)"
+                    className="w-full px-3 py-2 bg-[#0c0f13] border border-slate-800 focus:border-[#00ff87]/50 rounded-lg text-xs text-white focus:outline-none font-mono"
+                  />
+                </div>
+
+                {/* Curated Guide Text / Info */}
+                <div className="space-y-1.5">
+                  <label className="block text-[10px] font-mono text-slate-400 font-bold uppercase">Descrição da Guia Curadoria</label>
+                  <input
+                    type="text"
+                    required
+                    value={editDemoCuratedText}
+                    onChange={(e) => setEditDemoCuratedText(e.target.value)}
+                    placeholder="Ex: Voz e Violão de estúdio curado por profissional"
+                    className="w-full px-3 py-2 bg-[#0c0f13] border border-slate-800 focus:border-[#00ff87]/50 rounded-lg text-xs text-white focus:outline-none"
+                  />
+                </div>
+
+                {/* Curated Audio File Link */}
+                <div className="space-y-1.5">
+                  <label className="block text-[10px] font-mono text-slate-400 font-bold uppercase">Link do Áudio da Curadoria (URL)</label>
+                  <input
+                    type="text"
+                    required
+                    value={editDemoCuratedAudio}
+                    onChange={(e) => setEditDemoCuratedAudio(e.target.value)}
+                    placeholder="Link do arquivo de áudio (Firebase Storage ou externo)"
+                    className="w-full px-3 py-2 bg-[#0c0f13] border border-slate-800 focus:border-[#00ff87]/50 rounded-lg text-xs text-white focus:outline-none font-mono"
+                  />
+                </div>
+
+                {/* Buttons */}
+                <div className="flex gap-3 pt-4 border-t border-slate-900">
+                  <button
+                    type="submit"
+                    className="flex-1 py-3 bg-[#00ff87] hover:bg-[#00e076] text-black font-extrabold font-mono text-xs uppercase tracking-wider rounded-xl transition-all shadow-[0_4px_15px_rgba(0,255,135,0.15)] cursor-pointer"
+                  >
+                    [ SALVAR ALTERAÇÕES ]
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setEditingDemo(null)}
+                    className="px-5 py-3 bg-slate-900 hover:bg-slate-800 border border-slate-800 text-slate-400 hover:text-white rounded-xl text-xs font-mono transition-colors"
+                  >
+                    Cancelar
+                  </button>
+                </div>
+              </form>
             </motion.div>
           </div>
         )}
