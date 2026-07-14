@@ -60,6 +60,14 @@ interface UserItem {
   role?: string;
 }
 
+interface TopComposerItem {
+  name: string;
+  email: string;
+  spent: number;
+  count: number;
+  isPro: boolean;
+}
+
 interface TestimonialItem {
   id: string;
   composerName: string;
@@ -96,6 +104,8 @@ export default function AdminDashboard({ onLogout, onSwitchToClient }: AdminDash
   const [compositions, setCompositions] = useState<CompositionItem[]>([]);
   const [users, setUsers] = useState<UserItem[]>([]);
   const [supabaseDiscounts, setSupabaseDiscounts] = useState<Record<string, number>>({});
+  const [topComposers, setTopComposers] = useState<TopComposerItem[]>([]);
+  const [isLoadingTopComposers, setIsLoadingTopComposers] = useState(true);
   const [testimonials, setTestimonials] = useState<TestimonialItem[]>([]);
   const [promoActions, setPromoActions] = useState<PromoAction[]>([]);
   const [homeDemos, setHomeDemos] = useState<HomeDemoTrack[]>([]);
@@ -194,6 +204,113 @@ export default function AdminDashboard({ onLogout, onSwitchToClient }: AdminDash
       supabase.removeChannel(subscription);
     };
   }, []);
+
+  // Fetch and subscribe to Top 10 Composers dynamically from Supabase
+  useEffect(() => {
+    const fetchTopComposers = async () => {
+      setIsLoadingTopComposers(true);
+      try {
+        const { data: guiasData, error: guiasError } = await supabase
+          .from('guias')
+          .select('*')
+          .eq('status', 'pago');
+
+        if (guiasError) {
+          console.warn("Erro ao buscar guias do Supabase:", guiasError);
+          setTopComposers([]);
+          setIsLoadingTopComposers(false);
+          return;
+        }
+
+        if (!guiasData || guiasData.length === 0) {
+          setTopComposers([]);
+          setIsLoadingTopComposers(false);
+          return;
+        }
+
+        // Fetch profiles to get names and emails
+        const { data: profilesData } = await supabase
+          .from('profiles')
+          .select('*');
+
+        const profilesMap = new Map<string, any>();
+        if (profilesData) {
+          profilesData.forEach(p => {
+            profilesMap.set(p.id, p);
+          });
+        }
+
+        const aggregates: Record<string, { spent: number; count: number; userId: string; email: string; name: string }> = {};
+
+        guiasData.forEach((guia: any) => {
+          const userId = guia.client_id || guia.id_cliente;
+          if (!userId) return;
+
+          if (!aggregates[userId]) {
+            const profile = profilesMap.get(userId);
+            const userFromState = users.find(u => u.id === userId);
+
+            const email = profile?.email || userFromState?.email || 'cliente@email.com';
+            const name = profile?.name || userFromState?.name || userFromState?.nome || 'Compositor Real';
+
+            aggregates[userId] = {
+              userId,
+              email,
+              name,
+              spent: 0,
+              count: 0
+            };
+          }
+
+          const valor = Number(guia.valor_pago) || Number(guia.valor) || 49.90;
+          aggregates[userId].spent += valor;
+          aggregates[userId].count += 1;
+        });
+
+        const sortedList = Object.values(aggregates)
+          .map(item => {
+            const userFromState = users.find(u => u.id === item.userId);
+            return {
+              name: item.name,
+              email: item.email,
+              spent: Math.round(item.spent),
+              count: item.count,
+              isPro: userFromState?.isCompositorPro || false
+            };
+          })
+          .sort((a, b) => b.spent - a.spent)
+          .slice(0, 10);
+
+        setTopComposers(sortedList);
+      } catch (err) {
+        console.error("Erro geral ao processar Top Compositores:", err);
+        setTopComposers([]);
+      } finally {
+        setIsLoadingTopComposers(false);
+      }
+    };
+
+    fetchTopComposers();
+
+    const guiasSubscription = supabase
+      .channel('guias-top-composers-changes')
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'guias'
+        },
+        () => {
+          fetchTopComposers();
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(guiasSubscription);
+    };
+  }, [users]);
 
   // Load and Initialize real databases synced through Firestore
   useEffect(() => {
@@ -874,21 +991,6 @@ export default function AdminDashboard({ onLogout, onSwitchToClient }: AdminDash
     return 0; // maintain date or initial index order
   });
 
-  // Calculate TOP 10 COMPOSITORES based on spent/purchases
-  // In our simulated users, we can display users ranked by total investment
-  const topComposers = [
-    { name: 'Roberto Santos', email: 'roberto@email.com', spent: 850, count: 12, isPro: true },
-    { name: 'Bruno Lima', email: 'bruno@email.com', spent: 510, count: 8, isPro: true },
-    { name: 'Carlos Mello', email: 'carlos.m@email.com', spent: 340, count: 6, isPro: false },
-    { name: 'Pedro Bial', email: 'bial@g.com', spent: 170, count: 3, isPro: true },
-    { name: 'Amanda Costa', email: 'amanda@email.com', spent: 170, count: 4, isPro: false },
-    { name: 'Luana Silva', email: 'luanasilva@email.com', spent: 85, count: 2, isPro: false },
-    { name: 'Lucas Neto', email: 'lucasneto@email.com', spent: 85, count: 2, isPro: false },
-    { name: 'Juliano Santos', email: 'juliano@compositor.com', spent: 0, count: 1, isPro: false },
-    { name: 'Sorocaba Som', email: 'sorocaba@som.com', spent: 0, count: 1, isPro: false },
-    { name: 'Fernando Zor', email: 'fernando@zor.com', spent: 0, count: 1, isPro: false }
-  ];
-
   return (
     <div className="flex-1 flex flex-col md:flex-row min-h-[calc(100vh-100px)] bg-[#0d0f13] text-slate-100 relative">
       
@@ -1201,38 +1303,49 @@ export default function AdminDashboard({ onLogout, onSwitchToClient }: AdminDash
                   <span className="text-lg">📊</span>
                   <h3 className="font-display font-black text-white text-base">TOP 10 COMPOSITORES (Maiores Investimentos)</h3>
                 </div>
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
-                  {topComposers.map((composer, index) => (
-                    <div 
-                      key={index} 
-                      className="bg-slate-950/60 border border-slate-900 rounded-xl p-4 space-y-3 relative overflow-hidden"
-                    >
-                      <div className="absolute top-2 right-2 text-lg font-black text-slate-800 font-mono">
-                        #{index + 1}
-                      </div>
-                      <div className="space-y-1">
-                        <div className="font-bold text-white text-xs truncate pr-4">{composer.name}</div>
-                        <div className="text-[10px] text-slate-500 font-mono truncate">{composer.email}</div>
-                      </div>
-                      <div className="flex items-center justify-between pt-1">
-                        <div>
-                          <p className="text-[9px] font-mono text-slate-400 uppercase">INVESTIDO</p>
-                          <p className="text-sm font-extrabold text-[#00ff87]">R$ {composer.spent},00</p>
-                        </div>
-                        <div className="text-right">
-                          <p className="text-[9px] font-mono text-slate-400 uppercase">GUIAS</p>
-                          <p className="text-xs font-bold text-white">{composer.count}</p>
-                        </div>
-                      </div>
-                      <button
-                        onClick={() => handleGiftUser(composer.email, composer.name)}
-                        className="w-full py-1.5 bg-cyan-500/10 hover:bg-cyan-500/20 text-cyan-400 text-[10px] font-mono font-bold uppercase rounded border border-cyan-500/15 cursor-pointer text-center"
+                
+                {isLoadingTopComposers ? (
+                  <div className="py-8 text-center text-slate-500 text-xs font-mono">
+                    Carregando ranking de compositores...
+                  </div>
+                ) : topComposers.length === 0 ? (
+                  <div className="py-8 text-center border border-dashed border-slate-800 rounded-xl bg-slate-950/20 text-slate-500 text-sm font-mono">
+                    Nenhum cliente com investimentos registrados ainda
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
+                    {topComposers.map((composer, index) => (
+                      <div 
+                        key={index} 
+                        className="bg-slate-950/60 border border-slate-900 rounded-xl p-4 space-y-3 relative overflow-hidden"
                       >
-                        [ 🎁 Presentear Top User ]
-                      </button>
-                    </div>
-                  ))}
-                </div>
+                        <div className="absolute top-2 right-2 text-lg font-black text-slate-800 font-mono">
+                          #{index + 1}
+                        </div>
+                        <div className="space-y-1">
+                          <div className="font-bold text-white text-xs truncate pr-4">{composer.name}</div>
+                          <div className="text-[10px] text-slate-500 font-mono truncate">{composer.email}</div>
+                        </div>
+                        <div className="flex items-center justify-between pt-1">
+                          <div>
+                            <p className="text-[9px] font-mono text-slate-400 uppercase">INVESTIDO</p>
+                            <p className="text-sm font-extrabold text-[#00ff87]">R$ {composer.spent},00</p>
+                          </div>
+                          <div className="text-right">
+                            <p className="text-[9px] font-mono text-slate-400 uppercase">GUIAS</p>
+                            <p className="text-xs font-bold text-white">{composer.count}</p>
+                          </div>
+                        </div>
+                        <button
+                          onClick={() => handleGiftUser(composer.email, composer.name)}
+                          className="w-full py-1.5 bg-cyan-500/10 hover:bg-cyan-500/20 text-cyan-400 text-[10px] font-mono font-bold uppercase rounded border border-cyan-500/15 cursor-pointer text-center"
+                        >
+                          [ 🎁 Presentear Top User ]
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
 
               {/* Main Client Table */}
