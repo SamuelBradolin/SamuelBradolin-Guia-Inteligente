@@ -43,21 +43,105 @@ export default function Dashboard({ userEmail, onLogout }: DashboardProps) {
   const [globalNotice, setGlobalNotice] = useState<string | null>(null);
   const [privateNotices, setPrivateNotices] = useState<{ id: string; message: string; creditsGifted: number; discountGifted: number; date: string }[]>([]);
   
+  interface GamificationRule {
+    level_name: 'Bronze' | 'Prata' | 'Ouro';
+    min_guias: number;
+    max_guias: number;
+    bonus_value: number;
+    reward_type: 'Saldo de Desconto Interno' | 'Saldo de Saque em Dinheiro';
+  }
+  const [gamificationRules, setGamificationRules] = useState<GamificationRule[]>([
+    { level_name: 'Bronze', min_guias: 0, max_guias: 5, bonus_value: 10.00, reward_type: 'Saldo de Desconto Interno' },
+    { level_name: 'Prata', min_guias: 6, max_guias: 14, bonus_value: 5.00, reward_type: 'Saldo de Saque em Dinheiro' },
+    { level_name: 'Ouro', min_guias: 15, max_guias: 9999, bonus_value: 10.00, reward_type: 'Saldo de Saque em Dinheiro' }
+  ]);
+
+  // Load gamification rules from Supabase and cache in localStorage
+  useEffect(() => {
+    const fetchRules = async () => {
+      // Load from cache first
+      const cached = localStorage.getItem('gi_gamification_rules');
+      if (cached) {
+        try {
+          setGamificationRules(JSON.parse(cached));
+        } catch (_) {}
+      }
+
+      try {
+        const { data, error } = await supabase
+          .from('gamification_rules')
+          .select('*');
+
+        if (!error && data && data.length > 0) {
+          const rulesMap: Record<string, any> = {};
+          data.forEach((r: any) => {
+            rulesMap[r.level_name] = r;
+          });
+
+          const loadedRules: GamificationRule[] = [
+            {
+              level_name: 'Bronze',
+              min_guias: rulesMap['Bronze']?.min_guias ?? 0,
+              max_guias: rulesMap['Bronze']?.max_guias ?? 5,
+              bonus_value: Number(rulesMap['Bronze']?.bonus_value ?? 10.00),
+              reward_type: rulesMap['Bronze']?.reward_type ?? 'Saldo de Desconto Interno'
+            },
+            {
+              level_name: 'Prata',
+              min_guias: rulesMap['Prata']?.min_guias ?? 6,
+              max_guias: rulesMap['Prata']?.max_guias ?? 14,
+              bonus_value: Number(rulesMap['Prata']?.bonus_value ?? 5.00),
+              reward_type: rulesMap['Prata']?.reward_type ?? 'Saldo de Saque em Dinheiro'
+            },
+            {
+              level_name: 'Ouro',
+              min_guias: rulesMap['Ouro']?.min_guias ?? 15,
+              max_guias: rulesMap['Ouro']?.max_guias ?? 9999,
+              bonus_value: Number(rulesMap['Ouro']?.bonus_value ?? 10.00),
+              reward_type: rulesMap['Ouro']?.reward_type ?? 'Saldo de Saque em Dinheiro'
+            }
+          ];
+          setGamificationRules(loadedRules);
+          localStorage.setItem('gi_gamification_rules', JSON.stringify(loadedRules));
+        }
+      } catch (err) {
+        console.error("Erro ao carregar regras de gamification:", err);
+      }
+    };
+
+    fetchRules();
+  }, []);
+
   // Helper to compute user level based on paid guias count
   const getUserLevel = (count: number) => {
-    if (count >= 15) return { name: 'Ouro', color: 'text-amber-400 border-amber-500/30 bg-amber-500/10', icon: '🏆' };
-    if (count >= 6) return { name: 'Prata', color: 'text-slate-300 border-slate-400/30 bg-slate-400/10', icon: '🥈' };
-    return { name: 'Bronze', color: 'text-amber-700 border-amber-800/30 bg-amber-800/10', icon: '🥉' };
+    const ruleOuro = gamificationRules.find(r => r.level_name === 'Ouro');
+    const rulePrata = gamificationRules.find(r => r.level_name === 'Prata');
+
+    const minOuro = ruleOuro ? ruleOuro.min_guias : 15;
+    const minPrata = rulePrata ? rulePrata.min_guias : 6;
+
+    if (count >= minOuro) return { name: 'Ouro' as const, color: 'text-amber-400 border-amber-500/30 bg-amber-500/10', icon: '🏆' };
+    if (count >= minPrata) return { name: 'Prata' as const, color: 'text-slate-300 border-slate-400/30 bg-slate-400/10', icon: '🥈' };
+    return { name: 'Bronze' as const, color: 'text-amber-700 border-amber-800/30 bg-amber-800/10', icon: '🥉' };
   };
 
   const level = getUserLevel(paidGuiasCount);
 
   // Dynamic card content based on level
   const getReferralCardContent = () => {
+    const currentRule = gamificationRules.find(r => r.level_name === level.name) || {
+      level_name: level.name,
+      bonus_value: level.name === 'Ouro' ? 10.00 : level.name === 'Prata' ? 5.00 : 10.00,
+      reward_type: level.name === 'Bronze' ? 'Saldo de Desconto Interno' : 'Saldo de Saque em Dinheiro'
+    };
+
+    const bonusStr = currentRule.bonus_value.toLocaleString('pt-BR', { minimumFractionDigits: 0, maximumFractionDigits: 2 });
+    const isCash = currentRule.reward_type === 'Saldo de Saque em Dinheiro';
+
     if (level.name === 'Ouro') {
       return {
-        badge: "GANHE R$ 10 EM DINHEIRO",
-        rule: "Parabéns, Membro Elite Ouro! Indique um amigo através do seu link exclusivo. Quando seu amigo se cadastrar e fizer a primeira guia dele PAGA, você recebe R$ 10 em dinheiro direto no seu saldo de saques para transferir via PIX quando quiser!",
+        badge: `GANHE R$ ${bonusStr} EM DINHEIRO`,
+        rule: `Parabéns, Membro Elite Ouro! Indique um amigo através do seu link exclusivo. Quando seu amigo se cadastrar e fizer a primeira guia dele PAGA, você recebe R$ ${bonusStr} em dinheiro direto no seu saldo de saques para transferir via PIX quando quiser!`,
         balanceLabel: "SALDO DISPONÍVEL PARA SAQUE (R$)",
         balanceValue: withdrawableBalance,
         isCash: true
@@ -65,17 +149,17 @@ export default function Dashboard({ userEmail, onLogout }: DashboardProps) {
     }
     if (level.name === 'Prata') {
       return {
-        badge: "GANHE R$ 5 EM DINHEIRO",
-        rule: "Indique um amigo através do seu link exclusivo. Quando seu amigo se cadastrar e fizer a primeira guia dele PAGA, você recebe R$ 5 em dinheiro direto no seu saldo de saques para transferir via PIX quando quiser!",
+        badge: `GANHE R$ ${bonusStr} EM DINHEIRO`,
+        rule: `Indique um amigo através do seu link exclusivo. Quando seu amigo se cadastrar e fizer a primeira guia dele PAGA, você recebe R$ ${bonusStr} em dinheiro direto no seu saldo de saques para transferir via PIX quando quiser!`,
         balanceLabel: "SALDO DISPONÍVEL PARA SAQUE (R$)",
         balanceValue: withdrawableBalance,
         isCash: true
       };
     }
-    // Bronze (Default)
+    // Bronze
     return {
-      badge: "GANHE R$ 10 DE DESCONTO",
-      rule: "Indique um amigo através do seu link exclusivo. Quando seu amigo se cadastrar e fizer a primeira guia dele PAGA, você recebe um cupom de R$ 10 de desconto automaticamente no seu painel para usar no site.",
+      badge: `GANHE R$ ${bonusStr} DE DESCONTO`,
+      rule: `Indique um amigo através do seu link exclusivo. Quando seu amigo se cadastrar e fizer a primeira guia dele PAGA, você recebe um cupom de R$ ${bonusStr} de desconto automaticamente no seu painel para usar no site.`,
       balanceLabel: "DESCONTO ACUMULADO ATIVO (R$)",
       balanceValue: supabaseDiscount,
       isCash: false

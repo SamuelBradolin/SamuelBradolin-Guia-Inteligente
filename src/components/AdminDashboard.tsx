@@ -139,6 +139,21 @@ export default function AdminDashboard({ onLogout, onSwitchToClient }: AdminDash
   const [isLoadingUserDetail, setIsLoadingUserDetail] = useState(false);
   const [userPaidGuidesMap, setUserPaidGuidesMap] = useState<Record<string, number>>({});
 
+  // States for gamification rules
+  interface GamificationRule {
+    level_name: 'Bronze' | 'Prata' | 'Ouro';
+    min_guias: number;
+    max_guias: number;
+    bonus_value: number;
+    reward_type: 'Saldo de Desconto Interno' | 'Saldo de Saque em Dinheiro';
+  }
+  const [gamificationRules, setGamificationRules] = useState<GamificationRule[]>([
+    { level_name: 'Bronze', min_guias: 0, max_guias: 5, bonus_value: 10.00, reward_type: 'Saldo de Desconto Interno' },
+    { level_name: 'Prata', min_guias: 6, max_guias: 14, bonus_value: 5.00, reward_type: 'Saldo de Saque em Dinheiro' },
+    { level_name: 'Ouro', min_guias: 15, max_guias: 9999, bonus_value: 10.00, reward_type: 'Saldo de Saque em Dinheiro' }
+  ]);
+  const [isLoadingRules, setIsLoadingRules] = useState(false);
+
   // Pricing Card States
   const [offerTag, setOfferTag] = useState('OFERTA DE LANÇAMENTO');
   const [offerTitle, setOfferTitle] = useState('Produção de Guia Acústica Exclusiva');
@@ -393,6 +408,104 @@ export default function AdminDashboard({ onLogout, onSwitchToClient }: AdminDash
       setIsLoadingWithdrawRequests(false);
     }
   };
+
+  const fetchGamificationRules = async () => {
+    setIsLoadingRules(true);
+    try {
+      // First, try loading from localStorage as a fallback
+      const cached = localStorage.getItem('gi_gamification_rules');
+      if (cached) {
+        try {
+          setGamificationRules(JSON.parse(cached));
+        } catch (_) {}
+      }
+
+      // Now query Supabase
+      const { data, error } = await supabase
+        .from('gamification_rules')
+        .select('*');
+
+      if (error) {
+        console.warn("Tabela gamification_rules não encontrada ou erro ao carregar. Usando padrões.", error.message);
+        return;
+      }
+
+      if (data && data.length > 0) {
+        const rulesMap: Record<string, any> = {};
+        data.forEach((r: any) => {
+          rulesMap[r.level_name] = r;
+        });
+
+        const loadedRules: GamificationRule[] = [
+          {
+            level_name: 'Bronze',
+            min_guias: rulesMap['Bronze']?.min_guias ?? 0,
+            max_guias: rulesMap['Bronze']?.max_guias ?? 5,
+            bonus_value: Number(rulesMap['Bronze']?.bonus_value ?? 10.00),
+            reward_type: rulesMap['Bronze']?.reward_type ?? 'Saldo de Desconto Interno'
+          },
+          {
+            level_name: 'Prata',
+            min_guias: rulesMap['Prata']?.min_guias ?? 6,
+            max_guias: rulesMap['Prata']?.max_guias ?? 14,
+            bonus_value: Number(rulesMap['Prata']?.bonus_value ?? 5.00),
+            reward_type: rulesMap['Prata']?.reward_type ?? 'Saldo de Saque em Dinheiro'
+          },
+          {
+            level_name: 'Ouro',
+            min_guias: rulesMap['Ouro']?.min_guias ?? 15,
+            max_guias: rulesMap['Ouro']?.max_guias ?? 9999,
+            bonus_value: Number(rulesMap['Ouro']?.bonus_value ?? 10.00),
+            reward_type: rulesMap['Ouro']?.reward_type ?? 'Saldo de Saque em Dinheiro'
+          }
+        ];
+        setGamificationRules(loadedRules);
+        localStorage.setItem('gi_gamification_rules', JSON.stringify(loadedRules));
+      }
+    } catch (err) {
+      console.error("Erro geral ao carregar gamification rules:", err);
+    } finally {
+      setIsLoadingRules(false);
+    }
+  };
+
+  const handleSaveGamificationRules = async () => {
+    setIsLoadingRules(true);
+    try {
+      // First save locally to guarantee persistence even if table is not configured
+      localStorage.setItem('gi_gamification_rules', JSON.stringify(gamificationRules));
+
+      // Attempt upsert into Supabase
+      const { error } = await supabase
+        .from('gamification_rules')
+        .upsert(
+          gamificationRules.map(r => ({
+            level_name: r.level_name,
+            min_guias: r.min_guias,
+            max_guias: r.max_guias,
+            bonus_value: r.bonus_value,
+            reward_type: r.reward_type
+          })),
+          { onConflict: 'level_name' }
+        );
+
+      if (error) {
+        console.warn("Erro ao salvar regras no Supabase (talvez tabela precise ser criada):", error);
+        showToast("✓ Salvo localmente! Crie a tabela 'gamification_rules' no SQL Editor do Supabase se quiser persistência em nuvem.");
+      } else {
+        showToast("✓ Configurações de Níveis salvas no Supabase com sucesso!");
+      }
+    } catch (err) {
+      console.error("Erro geral ao salvar regras:", err);
+      showToast("Erro ao processar salvamento de regras.");
+    } finally {
+      setIsLoadingRules(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchGamificationRules();
+  }, []);
 
   const handleMarkAsPaid = async (requestId: string) => {
     try {
@@ -1880,6 +1993,120 @@ export default function AdminDashboard({ onLogout, onSwitchToClient }: AdminDash
                   <Plus className="h-4 w-4" />
                   <span>[ Criar Nova Ação de Bonificação ]</span>
                 </button>
+              </div>
+
+              {/* SEÇÃO DE CONFIGURAÇÃO DE NÍVEIS (GAMIFICATION RULES) */}
+              <div className="bg-[#111419]/40 border border-slate-900 rounded-2xl p-6 space-y-6">
+                <div>
+                  <span className="text-[9px] font-mono font-bold text-cyan-400 uppercase tracking-widest block">CONFIGURAÇÃO DE NÍVEIS DE RECOMPENSA</span>
+                  <h3 className="font-display font-black text-xl text-white mt-1">Regras de Gamificação e Comissões</h3>
+                  <p className="text-xs text-slate-400 mt-1">Configure os cortes de guias pagas, valores de bônus e tipos de recompensa para cada nível.</p>
+                </div>
+
+                <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                  {gamificationRules.map((rule, idx) => (
+                    <div key={rule.level_name} className="bg-[#14181f]/80 border border-slate-800 rounded-xl p-5 space-y-4">
+                      <div className="flex items-center justify-between border-b border-slate-800/80 pb-3">
+                        <div className="flex items-center gap-2">
+                          <span className="text-xl">
+                            {rule.level_name === 'Ouro' ? '🏆' : rule.level_name === 'Prata' ? '🥈' : '🥉'}
+                          </span>
+                          <span className="font-display font-bold text-white uppercase text-sm tracking-wider">
+                            Nível {rule.level_name}
+                          </span>
+                        </div>
+                        <span className="text-[10px] font-mono text-slate-500">Nível {idx + 1}</span>
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-3">
+                        <div className="space-y-1.5">
+                          <label className="block text-[9px] font-mono text-slate-400 font-bold uppercase tracking-wider">
+                            Mín. Guias Pagas
+                          </label>
+                          <input
+                            type="number"
+                            min={0}
+                            value={rule.min_guias}
+                            onChange={(e) => {
+                              const val = Number(e.target.value);
+                              const updated = [...gamificationRules];
+                              updated[idx].min_guias = val;
+                              setGamificationRules(updated);
+                            }}
+                            className="w-full px-3 py-2 bg-[#0c0f13] border border-slate-800 focus:border-[#00ff87]/50 rounded-lg text-xs text-white focus:outline-none font-mono"
+                          />
+                        </div>
+
+                        <div className="space-y-1.5">
+                          <label className="block text-[9px] font-mono text-slate-400 font-bold uppercase tracking-wider">
+                            Máx. Guias Pagas
+                          </label>
+                          <input
+                            type="number"
+                            min={0}
+                            value={rule.max_guias}
+                            onChange={(e) => {
+                              const val = Number(e.target.value);
+                              const updated = [...gamificationRules];
+                              updated[idx].max_guias = val;
+                              setGamificationRules(updated);
+                            }}
+                            className="w-full px-3 py-2 bg-[#0c0f13] border border-slate-800 focus:border-[#00ff87]/50 rounded-lg text-xs text-white focus:outline-none font-mono"
+                          />
+                        </div>
+                      </div>
+
+                      <div className="space-y-1.5">
+                        <label className="block text-[9px] font-mono text-slate-400 font-bold uppercase tracking-wider">
+                          Valor do Bônus de Indicação (R$)
+                        </label>
+                        <input
+                          type="number"
+                          step="0.01"
+                          min={0}
+                          value={rule.bonus_value}
+                          onChange={(e) => {
+                            const val = Number(e.target.value);
+                            const updated = [...gamificationRules];
+                            updated[idx].bonus_value = val;
+                            setGamificationRules(updated);
+                          }}
+                          className="w-full px-3 py-2 bg-[#0c0f13] border border-slate-800 focus:border-[#00ff87]/50 rounded-lg text-xs text-white focus:outline-none font-mono"
+                        />
+                      </div>
+
+                      <div className="space-y-1.5">
+                        <label className="block text-[9px] font-mono text-slate-400 font-bold uppercase tracking-wider">
+                          Tipo de Recompensa
+                        </label>
+                        <select
+                          value={rule.reward_type}
+                          onChange={(e) => {
+                            const val = e.target.value as any;
+                            const updated = [...gamificationRules];
+                            updated[idx].reward_type = val;
+                            setGamificationRules(updated);
+                          }}
+                          className="w-full px-3 py-2 bg-[#0c0f13] border border-slate-800 focus:border-[#00ff87]/50 rounded-lg text-xs text-white focus:outline-none"
+                        >
+                          <option value="Saldo de Desconto Interno">Saldo de Desconto Interno</option>
+                          <option value="Saldo de Saque em Dinheiro">Saldo de Saque em Dinheiro</option>
+                        </select>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+
+                <div className="flex justify-end pt-2">
+                  <button
+                    type="button"
+                    onClick={handleSaveGamificationRules}
+                    disabled={isLoadingRules}
+                    className="px-6 py-3 bg-[#00ff87] hover:bg-[#00e076] text-black font-extrabold font-mono text-xs uppercase tracking-wider rounded-xl transition-all shadow-[0_4px_15px_rgba(0,255,135,0.15)] cursor-pointer disabled:opacity-50 active:scale-[0.98]"
+                  >
+                    {isLoadingRules ? '[ SALVANDO... ]' : '[ SALVAR ALTERAÇÕES DE NÍVEIS ]'}
+                  </button>
+                </div>
               </div>
 
               {/* Add New Action Modal Form */}
