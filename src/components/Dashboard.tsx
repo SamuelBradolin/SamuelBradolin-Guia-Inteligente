@@ -52,6 +52,38 @@ export default function Dashboard({ userEmail, onLogout }: DashboardProps) {
 
   const level = getUserLevel(paidGuiasCount);
 
+  // Dynamic card content based on level
+  const getReferralCardContent = () => {
+    if (level.name === 'Ouro') {
+      return {
+        badge: "GANHE R$ 10 EM DINHEIRO",
+        rule: "Parabéns, Membro Elite Ouro! Indique um amigo através do seu link exclusivo. Quando seu amigo se cadastrar e fizer a primeira guia dele PAGA, você recebe R$ 10 em dinheiro direto no seu saldo de saques para transferir via PIX quando quiser!",
+        balanceLabel: "SALDO DISPONÍVEL PARA SAQUE (R$)",
+        balanceValue: withdrawableBalance,
+        isCash: true
+      };
+    }
+    if (level.name === 'Prata') {
+      return {
+        badge: "GANHE R$ 5 EM DINHEIRO",
+        rule: "Indique um amigo através do seu link exclusivo. Quando seu amigo se cadastrar e fizer a primeira guia dele PAGA, você recebe R$ 5 em dinheiro direto no seu saldo de saques para transferir via PIX quando quiser!",
+        balanceLabel: "SALDO DISPONÍVEL PARA SAQUE (R$)",
+        balanceValue: withdrawableBalance,
+        isCash: true
+      };
+    }
+    // Bronze (Default)
+    return {
+      badge: "GANHE R$ 10 DE DESCONTO",
+      rule: "Indique um amigo através do seu link exclusivo. Quando seu amigo se cadastrar e fizer a primeira guia dele PAGA, você recebe um cupom de R$ 10 de desconto automaticamente no seu painel para usar no site.",
+      balanceLabel: "DESCONTO ACUMULADO ATIVO (R$)",
+      balanceValue: supabaseDiscount,
+      isCash: false
+    };
+  };
+
+  const referralContent = getReferralCardContent();
+
   // Contribute states
   const [testimonial, setTestimonial] = useState('');
   const [testimonialCoupon, setTestimonialCoupon] = useState<string | null>(null);
@@ -1723,29 +1755,51 @@ export default function Dashboard({ userEmail, onLogout }: DashboardProps) {
                     <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
                       <h3 className="font-display font-bold text-lg text-white">2. Indique um Amigo</h3>
                       <span className="text-[9px] font-mono font-extrabold text-[#00ff87] bg-[#00ff87]/10 px-2 py-0.5 rounded-full border border-[#00ff87]/20 self-start">
-                        GANHE R$ 15
+                        {referralContent.badge}
                       </span>
                     </div>
                     <div className="p-4 rounded-xl bg-amber-500/5 border border-amber-500/10 text-amber-200 text-xs leading-relaxed space-y-1">
                       <span className="font-bold block text-[#00ff87] font-mono text-[10px] uppercase">REGRAS DA INDICAÇÃO:</span>
                       <p>
-                        Indique um amigo através do seu link exclusivo. Quando seu amigo se cadastrar e fizer a primeira guia dele PAGA, você recebe um cupom de R$ 15 automaticamente no seu painel.
+                        {referralContent.rule}
                       </p>
                     </div>
 
                     <div className="p-4 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-300 flex items-center justify-between">
                       <div>
                         <span className="text-[10px] font-mono uppercase tracking-wider text-[#00ff87] font-bold block">
-                          Desconto Acumulado Ativo (R$)
+                          {referralContent.balanceLabel}
                         </span>
                         <span className="text-2xl font-black font-display text-white">
-                          R$ {supabaseDiscount.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                          R$ {referralContent.balanceValue.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
                         </span>
                       </div>
                       <div className="h-10 w-10 rounded-full bg-[#00ff87]/10 flex items-center justify-center text-[#00ff87] font-bold font-mono text-xs">
                         R$
                       </div>
                     </div>
+
+                    {referralContent.isCash && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (withdrawableBalance <= 0) {
+                            showToast("Seu saldo de saque está zerado!");
+                            return;
+                          }
+                          setWithdrawAmount(withdrawableBalance.toString());
+                          setShowWithdrawModal(true);
+                        }}
+                        disabled={withdrawableBalance <= 0}
+                        className={`w-full py-3 px-4 rounded-xl font-mono text-[10px] font-bold uppercase tracking-wider transition-all duration-300 text-center flex items-center justify-center gap-2 ${
+                          withdrawableBalance > 0
+                            ? 'bg-[#00ff87] hover:bg-[#00e076] text-black shadow-[0_4px_15px_rgba(0,255,135,0.15)] active:scale-[0.98] cursor-pointer'
+                            : 'bg-slate-900 border border-slate-800 text-slate-500 cursor-not-allowed'
+                        }`}
+                      >
+                        <span>[ SOLICITAR SAQUE VIA PIX ]</span>
+                      </button>
+                    )}
 
                     <div className="space-y-3 pt-2">
                       <label className="block text-[10px] font-mono text-slate-500 font-bold uppercase tracking-wider">
