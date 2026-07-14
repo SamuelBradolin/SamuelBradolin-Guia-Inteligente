@@ -2815,7 +2815,106 @@ export default function AdminDashboard({ onLogout, onSwitchToClient }: AdminDash
                   return acc + 1;
                 }, 0);
                 const lucroEstimadoSemBonus = totalGuidesPurchased * 49.90;
-                const lucroLiquidoReal = faturamentoBruto - totalDescontos;
+                
+                // Sum of paid withdrawals (Prata and Ouro marked as PAGOS/concluido)
+                const totalSaquesPagos = withdrawRequests
+                  .filter(r => r.status === 'concluido')
+                  .reduce((acc, curr) => acc + curr.amount, 0);
+
+                // Formula: Lucro Líquido = (Faturamento Bruto das Vendas) - (Descontos Utilizados por Bronze) - (Saques PIX Efetivamente Pagos)
+                const lucroLiquidoReal = faturamentoBruto - totalDescontos - totalSaquesPagos;
+
+                // Percentages for stacked bar chart
+                const pctLucro = faturamentoBruto > 0 ? Math.max(0, (lucroLiquidoReal / faturamentoBruto) * 100) : 0;
+                const pctDescontos = faturamentoBruto > 0 ? Math.min(100, (totalDescontos / faturamentoBruto) * 100) : 0;
+                const pctSaques = faturamentoBruto > 0 ? Math.min(100, (totalSaquesPagos / faturamentoBruto) * 100) : 0;
+
+                // Chronological Unification of entries (transactions) and withdrawals (withdrawRequests)
+                interface UnifiedTransaction {
+                  id: string;
+                  dateTime: string;
+                  timestamp: number;
+                  clientName: string;
+                  clientEmail: string;
+                  label: string;
+                  category: 'ENTRADA' | 'DESCONTO' | 'SAIDA_PIX';
+                  amount: number;
+                }
+
+                const unifiedList: UnifiedTransaction[] = [];
+
+                const parseDateStr = (dateStr: string | undefined): { timestamp: number; formatted: string } => {
+                  if (!dateStr) {
+                    const now = new Date();
+                    return { timestamp: now.getTime(), formatted: now.toLocaleString('pt-BR') };
+                  }
+                  
+                  const dmyMatch = dateStr.match(/^(\d{2})\/(\d{2})\/(\d{4})\s+(\d{2}):(\d{2}):(\d{2})$/);
+                  if (dmyMatch) {
+                    const [_, day, month, year, hour, min, sec] = dmyMatch;
+                    const d = new Date(Number(year), Number(month) - 1, Number(day), Number(hour), Number(min), Number(sec));
+                    return { timestamp: d.getTime(), formatted: dateStr };
+                  }
+
+                  const d = new Date(dateStr);
+                  const ts = isNaN(d.getTime()) ? Date.now() : d.getTime();
+                  
+                  const pad = (n: number) => String(n).padStart(2, '0');
+                  const formatted = `${pad(d.getDate())}/${pad(d.getMonth() + 1)}/${d.getFullYear()} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+                  
+                  return { timestamp: ts, formatted };
+                };
+
+                // Add standard transactions
+                transactions.forEach((tx) => {
+                  const dateInfo = parseDateStr(tx.dateTime);
+                  
+                  // Entrada
+                  unifiedList.push({
+                    id: `${tx.id}-sale`,
+                    dateTime: dateInfo.formatted,
+                    timestamp: dateInfo.timestamp,
+                    clientName: tx.clientName,
+                    clientEmail: tx.clientEmail,
+                    label: tx.type === 'Pacote Pro' ? 'Venda de Combo - Pacote Pro' : 'Venda de Guia Avulsa',
+                    category: 'ENTRADA',
+                    amount: tx.amountPaid
+                  });
+
+                  // Desconto
+                  if (tx.discountApplied > 0) {
+                    unifiedList.push({
+                      id: `${tx.id}-discount`,
+                      dateTime: dateInfo.formatted,
+                      timestamp: dateInfo.timestamp,
+                      clientName: tx.clientName,
+                      clientEmail: tx.clientEmail,
+                      label: 'Cupom Utilizado - Bronze',
+                      category: 'DESCONTO',
+                      amount: -tx.discountApplied
+                    });
+                  }
+                });
+
+                // Add paid withdrawals
+                withdrawRequests
+                  .filter(r => r.status === 'concluido')
+                  .forEach((req) => {
+                    const dateInfo = parseDateStr(req.created_at);
+                    unifiedList.push({
+                      id: `${req.id}-withdrawal`,
+                      dateTime: dateInfo.formatted,
+                      timestamp: dateInfo.timestamp,
+                      clientName: req.user_name || 'Afiliado PIX',
+                      clientEmail: req.user_email || '',
+                      label: 'Saque de Afiliado Concluído - Prata/Ouro',
+                      category: 'SAIDA_PIX',
+                      amount: -req.amount
+                    });
+                  });
+
+                // Sort newest first
+                const sortedUnifiedTransactions = [...unifiedList].sort((a, b) => b.timestamp - a.timestamp);
 
                 return (
                   <div className="space-y-6">
@@ -2841,13 +2940,13 @@ export default function AdminDashboard({ onLogout, onSwitchToClient }: AdminDash
                         <div className="absolute top-0 right-0 p-3 text-red-500/10">
                           <Gift className="h-16 w-16" />
                         </div>
-                        <span className="text-[9px] font-mono font-bold text-red-400 uppercase block tracking-wider">CARD B • DESCONTOS</span>
-                        <h4 className="text-xs font-mono font-bold text-slate-300 mt-2 block">Total de Descontos Concedidos</h4>
+                        <span className="text-[9px] font-mono font-bold text-red-400 uppercase block tracking-wider">CARD B • BRONZE</span>
+                        <h4 className="text-xs font-mono font-bold text-slate-300 mt-2 block">Total de Descontos (Bronze)</h4>
                         <p className="text-2xl font-black text-red-400 mt-3 font-display">
                           R$ {totalDescontos.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                         </p>
                         <p className="text-[10px] text-slate-500 font-mono mt-1 leading-normal">
-                          Bônus de depoimentos, indicações e descontos do Pacote Pro.
+                          Soma de descontos convertidos em novas guias por membros Bronze.
                         </p>
                       </div>
 
@@ -2856,13 +2955,13 @@ export default function AdminDashboard({ onLogout, onSwitchToClient }: AdminDash
                         <div className="absolute top-0 right-0 p-3 text-cyan-500/10">
                           <TrendingUp className="h-16 w-16" />
                         </div>
-                        <span className="text-[9px] font-mono font-bold text-cyan-400 uppercase block tracking-wider">CARD C • PROJEÇÃO</span>
-                        <h4 className="text-xs font-mono font-bold text-slate-300 mt-2 block">Lucro Estimado (Sem Bônus)</h4>
+                        <span className="text-[9px] font-mono font-bold text-cyan-400 uppercase block tracking-wider">CARD C • SAQUES PIX</span>
+                        <h4 className="text-xs font-mono font-bold text-slate-300 mt-2 block">Total de Saques Pagos (PIX)</h4>
                         <p className="text-2xl font-black text-cyan-400 mt-3 font-display">
-                          R$ {lucroEstimadoSemBonus.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                          R$ {totalSaquesPagos.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                         </p>
                         <p className="text-[10px] text-slate-500 font-mono mt-1 leading-normal">
-                          Projeção ({totalGuidesPurchased} guias) caso todas fossem pagas por R$ 49,90.
+                          Dinheiro real enviado via PIX para afiliados Prata e Ouro.
                         </p>
                       </div>
 
@@ -2879,7 +2978,7 @@ export default function AdminDashboard({ onLogout, onSwitchToClient }: AdminDash
                             R$ {lucroLiquidoReal.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                           </p>
                           <p className="text-[10px] text-slate-400 font-mono mt-1 leading-normal font-semibold">
-                            Faturamento Bruto menos Descontos Concedidos.
+                            Faturamento Bruto menos Descontos e Saques PIX.
                           </p>
                         </div>
                       </div>
@@ -2893,24 +2992,64 @@ export default function AdminDashboard({ onLogout, onSwitchToClient }: AdminDash
                       </h3>
                       
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-                        <div className="space-y-4 bg-slate-950/40 p-4 rounded-xl border border-slate-900/60">
+                        <div className="space-y-4 bg-slate-950/40 p-5 rounded-xl border border-slate-900/60">
                           <h4 className="text-xs font-mono font-bold text-slate-400 uppercase">Aproveitamento de Margem de Lucro</h4>
-                          <div className="space-y-2">
+                          <div className="space-y-3">
                             <div className="flex justify-between text-xs font-mono">
-                              <span className="text-slate-400">Lucro Líquido Real (Com Bônus):</span>
+                              <span className="text-slate-400">Distribuição do Faturamento Bruto:</span>
                               <span className="text-[#00ff87] font-bold">
-                                {lucroEstimadoSemBonus > 0 ? ((lucroLiquidoReal / lucroEstimadoSemBonus) * 100).toFixed(1) : 0}%
+                                {faturamentoBruto > 0 ? ((lucroLiquidoReal / faturamentoBruto) * 100).toFixed(1) : 0}% Lucro Real
                               </span>
                             </div>
-                            <div className="h-2.5 w-full bg-slate-900 rounded-full overflow-hidden flex">
-                              <div 
-                                className="bg-[#00ff87] h-full rounded-full shadow-[0_0_8px_rgba(0,255,135,0.4)]" 
-                                style={{ width: `${lucroEstimadoSemBonus > 0 ? Math.max(5, Math.min(100, (lucroLiquidoReal / lucroEstimadoSemBonus) * 100)) : 0}%` }}
-                              />
+                            
+                            {/* Stacked multi-segment bar */}
+                            <div className="h-3 w-full bg-slate-900 rounded-full overflow-hidden flex">
+                              {pctLucro > 0 && (
+                                <div 
+                                  className="bg-[#00ff87] h-full shadow-[0_0_8px_rgba(0,255,135,0.4)] transition-all duration-300" 
+                                  style={{ width: `${pctLucro}%` }}
+                                  title={`Lucro Líquido Real: ${pctLucro.toFixed(1)}%`}
+                                />
+                              )}
+                              {pctDescontos > 0 && (
+                                <div 
+                                  className="bg-amber-500 h-full transition-all duration-300" 
+                                  style={{ width: `${pctDescontos}%` }}
+                                  title={`Descontos Concedidos (Bronze): ${pctDescontos.toFixed(1)}%`}
+                                />
+                              )}
+                              {pctSaques > 0 && (
+                                <div 
+                                  className="bg-rose-500 h-full transition-all duration-300" 
+                                  style={{ width: `${pctSaques}%` }}
+                                  title={`Custos com Afiliados (Saques PIX): ${pctSaques.toFixed(1)}%`}
+                                />
+                              )}
                             </div>
-                            <div className="flex justify-between text-[10px] text-slate-500 font-mono pt-1">
-                              <span>Faturado: R$ {faturamentoBruto.toFixed(2)}</span>
-                              <span>Descontado: R$ {totalDescontos.toFixed(2)}</span>
+
+                            {/* Legends & Indicator Visual Labels */}
+                            <div className="flex flex-col gap-2 text-[10px] text-slate-400 font-mono pt-3 border-t border-slate-900/50">
+                              <div className="flex items-center justify-between">
+                                <div className="flex items-center gap-2">
+                                  <span className="h-2 w-2 rounded-full bg-[#00ff87]" />
+                                  <span>Lucro Líquido Real:</span>
+                                </div>
+                                <span className="text-white font-bold">R$ {lucroLiquidoReal.toLocaleString('pt-BR', { minimumFractionDigits: 2 })} ({pctLucro.toFixed(1)}%)</span>
+                              </div>
+                              <div className="flex items-center justify-between">
+                                <div className="flex items-center gap-2">
+                                  <span className="h-2 w-2 rounded-full bg-amber-500" />
+                                  <span>Descontos Concedidos (Bronze):</span>
+                                </div>
+                                <span className="text-amber-500 font-bold">R$ {totalDescontos.toLocaleString('pt-BR', { minimumFractionDigits: 2 })} ({pctDescontos.toFixed(1)}%)</span>
+                              </div>
+                              <div className="flex items-center justify-between">
+                                <div className="flex items-center gap-2">
+                                  <span className="h-2 w-2 rounded-full bg-rose-500" />
+                                  <span>Custos com Afiliados (Saques PIX):</span>
+                                </div>
+                                <span className="text-rose-500 font-bold">R$ {totalSaquesPagos.toLocaleString('pt-BR', { minimumFractionDigits: 2 })} ({pctSaques.toFixed(1)}%)</span>
+                              </div>
                             </div>
                           </div>
                         </div>
@@ -2938,7 +3077,7 @@ export default function AdminDashboard({ onLogout, onSwitchToClient }: AdminDash
                           <span>Lista de Transações Recentes (Fluxo de Caixa)</span>
                         </h3>
                         <span className="px-3 py-1 rounded-full bg-slate-950 text-slate-500 border border-slate-900 font-mono text-[10px]">
-                          {transactions.length} transações registradas no total
+                          {sortedUnifiedTransactions.length} registros no fluxo de caixa
                         </span>
                       </div>
 
@@ -2948,21 +3087,20 @@ export default function AdminDashboard({ onLogout, onSwitchToClient }: AdminDash
                             <thead>
                               <tr className="bg-[#0a0c0f] border-b border-slate-900 text-[10px] font-mono text-slate-400 tracking-wider uppercase">
                                 <th className="py-4 px-6">Data/Hora</th>
-                                <th className="py-4 px-6">Cliente</th>
-                                <th className="py-4 px-6">Tipo de Compra</th>
-                                <th className="py-4 px-6 text-right">Valor Pago (R$)</th>
-                                <th className="py-4 px-6 text-right">Desconto Aplicado (R$)</th>
+                                <th className="py-4 px-6">Cliente / Beneficiário</th>
+                                <th className="py-4 px-6">Tipo de Transação</th>
+                                <th className="py-4 px-6 text-right">Valor (R$)</th>
                               </tr>
                             </thead>
                             <tbody className="divide-y divide-slate-900/50">
-                              {transactions.length === 0 ? (
+                              {sortedUnifiedTransactions.length === 0 ? (
                                 <tr>
-                                  <td colSpan={5} className="py-8 text-center text-slate-500 text-xs font-mono">
+                                  <td colSpan={4} className="py-8 text-center text-slate-500 text-xs font-mono">
                                     Nenhuma transação financeira registrada até o momento.
                                   </td>
                                 </tr>
                               ) : (
-                                [...transactions].reverse().map((tx) => (
+                                sortedUnifiedTransactions.map((tx) => (
                                   <tr key={tx.id} className="text-xs hover:bg-[#111419]/80 transition-colors">
                                     <td className="py-4 px-6 font-mono text-slate-400">
                                       {tx.dateTime}
@@ -2970,35 +3108,30 @@ export default function AdminDashboard({ onLogout, onSwitchToClient }: AdminDash
                                     <td className="py-4 px-6">
                                       <div>
                                         <span className="font-bold text-white block">{tx.clientName}</span>
-                                        <span className="text-[10px] text-slate-500 font-mono truncate max-w-[200px] block">{tx.clientEmail}</span>
+                                        {tx.clientEmail && (
+                                          <span className="text-[10px] text-slate-500 font-mono truncate max-w-[200px] block">{tx.clientEmail}</span>
+                                        )}
                                       </div>
                                     </td>
                                     <td className="py-4 px-6">
-                                      {tx.type === 'Pacote Pro' ? (
-                                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded font-bold font-mono text-[9px] bg-cyan-500/15 text-cyan-400 border border-cyan-500/20">
-                                          ⚡ Pacote Pro
+                                      {tx.category === 'ENTRADA' ? (
+                                        <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded font-bold font-mono text-[9px] bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 uppercase tracking-wider">
+                                          [ ENTRADA ] Venda de Guia ou Combo
                                         </span>
-                                      ) : tx.type === 'Uso de Cupom' ? (
-                                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded font-bold font-mono text-[9px] bg-amber-500/15 text-amber-400 border border-amber-500/20">
-                                          🏷️ Uso de Cupom
+                                      ) : tx.category === 'DESCONTO' ? (
+                                        <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded font-bold font-mono text-[9px] bg-amber-500/10 text-amber-500 border border-amber-500/20 uppercase tracking-wider">
+                                          [ DESCONTO ] Cupom Utilizado - Bronze
                                         </span>
                                       ) : (
-                                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded font-bold font-mono text-[9px] bg-emerald-500/15 text-[#00ff87] border border-[#00ff87]/20">
-                                          🎵 Guia Avulsa
+                                        <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded font-bold font-mono text-[9px] bg-rose-500/10 text-rose-500 border border-rose-500/20 uppercase tracking-wider">
+                                          [ SAÍDA PIX ] Saque de Afiliado Concluído - Prata/Ouro
                                         </span>
                                       )}
                                     </td>
-                                    <td className="py-4 px-6 text-right font-mono font-bold text-white">
-                                      R$ {tx.amountPaid.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                                    </td>
-                                    <td className="py-4 px-6 text-right font-mono text-slate-400">
-                                      {tx.discountApplied > 0 ? (
-                                        <span className="text-red-400 font-medium">
-                                          - R$ {tx.discountApplied.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                                        </span>
-                                      ) : (
-                                        <span className="text-slate-600 font-mono">-</span>
-                                      )}
+                                    <td className={`py-4 px-6 text-right font-mono font-bold ${
+                                      tx.category === 'ENTRADA' ? 'text-[#00ff87]' : tx.category === 'DESCONTO' ? 'text-amber-500' : 'text-rose-500'
+                                    }`}>
+                                      {tx.category === 'ENTRADA' ? '+' : '-'} R$ {Math.abs(tx.amount).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                                     </td>
                                   </tr>
                                 ))
