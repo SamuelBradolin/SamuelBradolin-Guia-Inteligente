@@ -97,8 +97,22 @@ interface HomeDemoTrack {
 }
 
 export default function AdminDashboard({ onLogout, onSwitchToClient }: AdminDashboardProps) {
-  const [activeTab, setActiveTab] = useState<'production' | 'clients' | 'testimonials' | 'crm' | 'contribute' | 'home_adjusts' | 'finances'>('production');
+  const [activeTab, setActiveTab] = useState<'production' | 'clients' | 'testimonials' | 'crm' | 'contribute' | 'home_adjusts' | 'finances' | 'withdrawals'>('production');
   const [successToast, setSuccessToast] = useState<string | null>(null);
+
+  // States for withdrawal requests
+  interface WithdrawRequest {
+    id: string;
+    user_id: string;
+    amount: number;
+    pix_key: string;
+    status: 'pendente' | 'concluido';
+    created_at?: string;
+    user_name?: string;
+    user_email?: string;
+  }
+  const [withdrawRequests, setWithdrawRequests] = useState<WithdrawRequest[]>([]);
+  const [isLoadingWithdrawRequests, setIsLoadingWithdrawRequests] = useState(false);
 
   // States for interactive actions
   const [compositions, setCompositions] = useState<CompositionItem[]>([]);
@@ -117,6 +131,13 @@ export default function AdminDashboard({ onLogout, onSwitchToClient }: AdminDash
   const [privateMessage, setPrivateMessage] = useState('');
   const [privateCredits, setPrivateCredits] = useState(0);
   const [privateDiscount, setPrivateDiscount] = useState(0);
+
+  // Client Details Modal States
+  const [selectedUserDetail, setSelectedUserDetail] = useState<UserItem | null>(null);
+  const [selectedUserProfile, setSelectedUserProfile] = useState<any>(null);
+  const [selectedUserInvested, setSelectedUserInvested] = useState<number>(0);
+  const [isLoadingUserDetail, setIsLoadingUserDetail] = useState(false);
+  const [userPaidGuidesMap, setUserPaidGuidesMap] = useState<Record<string, number>>({});
 
   // Pricing Card States
   const [offerTag, setOfferTag] = useState('OFERTA DE LANÇAMENTO');
@@ -240,6 +261,26 @@ export default function AdminDashboard({ onLogout, onSwitchToClient }: AdminDash
           });
         }
 
+        // Map user email to their paid guides count
+        const paidCountMap: Record<string, number> = {};
+        guiasData.forEach((guia: any) => {
+          if (guia.composer_email) {
+            const emailKey = guia.composer_email.toLowerCase().trim();
+            paidCountMap[emailKey] = (paidCountMap[emailKey] || 0) + 1;
+          }
+          const uId = guia.client_id || guia.id_cliente;
+          if (uId) {
+            const profile = profilesMap.get(uId);
+            if (profile && profile.email) {
+              const emailKey = profile.email.toLowerCase().trim();
+              if (!guia.composer_email || guia.composer_email.toLowerCase().trim() !== emailKey) {
+                paidCountMap[emailKey] = (paidCountMap[emailKey] || 0) + 1;
+              }
+            }
+          }
+        });
+        setUserPaidGuidesMap(paidCountMap);
+
         const aggregates: Record<string, { spent: number; count: number; userId: string; email: string; name: string }> = {};
 
         guiasData.forEach((guia: any) => {
@@ -311,6 +352,117 @@ export default function AdminDashboard({ onLogout, onSwitchToClient }: AdminDash
       supabase.removeChannel(guiasSubscription);
     };
   }, [users]);
+
+  const fetchWithdrawRequests = async () => {
+    setIsLoadingWithdrawRequests(true);
+    try {
+      const { data: requests, error } = await supabase
+        .from('withdraw_requests')
+        .select('*')
+        .order('created_at', { ascending: false });
+
+      if (error) throw error;
+
+      if (!requests || requests.length === 0) {
+        setWithdrawRequests([]);
+        return;
+      }
+
+      // Fetch profiles to map user name and email
+      const { data: profiles, error: pError } = await supabase
+        .from('profiles')
+        .select('id, name, email');
+
+      const profilesMap: Record<string, { name: string; email: string }> = {};
+      if (profiles) {
+        profiles.forEach(p => {
+          profilesMap[p.id] = { name: p.name || 'Sem Nome', email: p.email || '' };
+        });
+      }
+
+      const mapped = requests.map((r: any) => ({
+        ...r,
+        user_name: profilesMap[r.user_id]?.name || 'Usuário Desconhecido',
+        user_email: profilesMap[r.user_id]?.email || ''
+      }));
+
+      setWithdrawRequests(mapped);
+    } catch (err) {
+      console.error("Erro ao buscar solicitações de saque:", err);
+    } finally {
+      setIsLoadingWithdrawRequests(false);
+    }
+  };
+
+  const handleMarkAsPaid = async (requestId: string) => {
+    try {
+      const { error } = await supabase
+        .from('withdraw_requests')
+        .update({ status: 'concluido' })
+        .eq('id', requestId);
+
+      if (error) throw error;
+
+      showToast("✓ Solicitação de saque marcada como paga com sucesso!");
+      fetchWithdrawRequests();
+    } catch (err) {
+      console.error("Erro ao marcar saque como pago:", err);
+      showToast("Erro ao processar alteração de status.");
+    }
+  };
+
+  useEffect(() => {
+    fetchWithdrawRequests();
+
+    const sub = supabase
+      .channel('withdraw_requests_changes')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'withdraw_requests' }, () => {
+        fetchWithdrawRequests();
+      })
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(sub);
+    };
+  }, []);
+
+  const handleViewUserDetails = async (usr: UserItem) => {
+    setSelectedUserDetail(usr);
+    setSelectedUserProfile(null);
+    setSelectedUserInvested(0);
+    setIsLoadingUserDetail(true);
+
+    try {
+      // Fetch profile from Supabase profiles
+      const { data: profileData, error: profileError } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('email', usr.email)
+        .maybeSingle();
+
+      if (!profileError && profileData) {
+        setSelectedUserProfile(profileData);
+      }
+
+      // Fetch sum of paid guias
+      const { data: guiasData, error: guiasError } = await supabase
+        .from('guias')
+        .select('*')
+        .eq('status', 'pago');
+
+      if (!guiasError && guiasData) {
+        const userGuias = guiasData.filter((g: any) => g.client_id === usr.id || g.id_cliente === usr.id);
+        const total = userGuias.reduce((sum: number, g: any) => {
+          return sum + (Number(g.valor_pago) || Number(g.valor) || 49.90);
+        }, 0);
+        setSelectedUserInvested(total);
+      }
+    } catch (err) {
+      console.error("Erro ao buscar detalhes do compositor do Supabase:", err);
+    } finally {
+      setIsLoadingUserDetail(false);
+    }
+  };
 
   // Load and Initialize real databases synced through Firestore
   useEffect(() => {
@@ -1129,6 +1281,26 @@ export default function AdminDashboard({ onLogout, onSwitchToClient }: AdminDash
               <span className="truncate">⚙️ Ajustes do Site</span>
             </button>
 
+            {/* Nav 8: Solicitações de Saque */}
+            <button
+              onClick={() => setActiveTab('withdrawals')}
+              className={`w-full flex items-center justify-between px-3 py-2 rounded-md font-mono text-[10px] font-bold tracking-wider uppercase transition-all border text-left ${
+                activeTab === 'withdrawals'
+                  ? 'bg-[#00ff87]/10 text-[#00ff87] border-[#00ff87]/20'
+                  : 'text-slate-400 hover:text-[#00ff87] border-transparent hover:bg-[#00ff87]/5 hover:border-[#00ff87]/10'
+              }`}
+            >
+              <div className="flex items-center gap-2.5 min-w-0">
+                <Landmark className="h-3 w-3 flex-shrink-0" />
+                <span className="truncate">💸 Solicitações Saque</span>
+              </div>
+              {withdrawRequests.filter(r => r.status === 'pendente').length > 0 && (
+                <span className="bg-red-500 text-white font-mono text-[8px] px-1.5 py-0.5 rounded-full font-black animate-pulse">
+                  {withdrawRequests.filter(r => r.status === 'pendente').length}
+                </span>
+              )}
+            </button>
+
           </nav>
         </div>
 
@@ -1370,21 +1542,42 @@ export default function AdminDashboard({ onLogout, onSwitchToClient }: AdminDash
                       {users.map((usr) => (
                         <tr key={usr.id} className="hover:bg-slate-900/10 transition-colors">
                           <td className="py-4 px-6">
-                            <div>
-                              <div className="font-bold text-white text-sm">{usr.name}</div>
-                              <p className="text-[10px] text-slate-500 font-mono">{usr.email}</p>
+                            <div 
+                              onClick={() => handleViewUserDetails(usr)}
+                              className="group cursor-pointer hover:opacity-90"
+                              title="Clique para ver detalhes completos"
+                            >
+                              <div className="font-bold text-white text-sm group-hover:text-[#00ff87] transition-colors flex items-center gap-1.5">
+                                <span>{usr.name}</span>
+                                <Eye className="h-3.5 w-3.5 opacity-0 group-hover:opacity-100 transition-opacity text-[#00ff87]" />
+                              </div>
+                              <p className="text-[10px] text-slate-500 font-mono group-hover:text-slate-400 transition-colors">{usr.email}</p>
                             </div>
                           </td>
                           <td className="py-4 px-6">
-                            {usr.isCompositorPro ? (
-                              <span className="text-[10px] font-mono font-extrabold text-[#00ff87] bg-[#00ff87]/10 px-2.5 py-0.5 rounded-full border border-[#00ff87]/20">
-                                ⚡ COMPOSITOR PRO
-                              </span>
-                            ) : (
-                              <span className="text-[10px] font-mono text-slate-400 bg-slate-900 px-2.5 py-0.5 rounded-full border border-slate-850">
-                                COMPOSITOR PADRÃO
-                              </span>
-                            )}
+                            {(() => {
+                              const emailKey = usr.email.toLowerCase().trim();
+                              const paidCount = userPaidGuidesMap[emailKey] || 0;
+                              if (paidCount >= 15) {
+                                return (
+                                  <span className="text-[10px] font-mono font-extrabold text-amber-400 bg-amber-500/10 px-2.5 py-1 rounded-full border border-amber-500/30 shadow-[0_0_10px_rgba(245,158,11,0.1)]">
+                                    🏆 OURO ({paidCount} guias)
+                                  </span>
+                                );
+                              } else if (paidCount >= 6) {
+                                return (
+                                  <span className="text-[10px] font-mono font-extrabold text-slate-300 bg-slate-400/10 px-2.5 py-1 rounded-full border border-slate-400/20">
+                                    🥈 PRATA ({paidCount} guias)
+                                  </span>
+                                );
+                              } else {
+                                return (
+                                  <span className="text-[10px] font-mono font-extrabold text-amber-600 bg-amber-800/10 px-2.5 py-1 rounded-full border border-amber-800/20">
+                                    🥉 BRONZE ({paidCount} guias)
+                                  </span>
+                                );
+                              }
+                            })()}
                           </td>
                           <td className="py-4 px-6 font-mono font-bold text-slate-300">
                             {usr.credits} {usr.credits === 1 ? 'crédito' : 'créditos'}
@@ -1393,16 +1586,25 @@ export default function AdminDashboard({ onLogout, onSwitchToClient }: AdminDash
                             R$ {(supabaseDiscounts[usr.email.toLowerCase()] !== undefined ? supabaseDiscounts[usr.email.toLowerCase()] : usr.activeDiscount).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
                           </td>
                           <td className="py-4 px-6 text-right">
-                            <button
-                              onClick={() => {
-                                setPrivateEmail(usr.email);
-                                setActiveTab('crm');
-                                showToast(`Cliente ${usr.name} selecionado para CRM!`);
-                              }}
-                              className="px-3 py-1.5 bg-cyan-500/5 hover:bg-cyan-500/10 border border-cyan-500/20 hover:border-cyan-500/40 text-cyan-400 rounded-lg font-bold font-mono text-[10px] uppercase cursor-pointer"
-                            >
-                              [ Enviar Mensagem/Presente ]
-                            </button>
+                            <div className="flex items-center justify-end gap-2">
+                              <button
+                                onClick={() => handleViewUserDetails(usr)}
+                                className="px-3 py-1.5 bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/20 hover:border-emerald-500/40 text-[#00ff87] rounded-lg font-bold font-mono text-[10px] uppercase cursor-pointer flex items-center gap-1 transition-all"
+                              >
+                                <Eye className="h-3 w-3" />
+                                <span>[ Ver Detalhes ]</span>
+                              </button>
+                              <button
+                                onClick={() => {
+                                  setPrivateEmail(usr.email);
+                                  setActiveTab('crm');
+                                  showToast(`Cliente ${usr.name} selecionado para CRM!`);
+                                }}
+                                className="px-3 py-1.5 bg-cyan-500/5 hover:bg-cyan-500/10 border border-cyan-500/20 hover:border-cyan-500/40 text-cyan-400 rounded-lg font-bold font-mono text-[10px] uppercase cursor-pointer transition-all"
+                              >
+                                [ Enviar Mensagem/Presente ]
+                              </button>
+                            </div>
                           </td>
                         </tr>
                       ))}
@@ -2486,6 +2688,138 @@ export default function AdminDashboard({ onLogout, onSwitchToClient }: AdminDash
             </motion.div>
           )}
 
+          {/* SCREEN 8 - SOLICITAÇÕES DE SAQUE */}
+          {activeTab === 'withdrawals' && (
+            <motion.div
+              key="withdrawals"
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -10 }}
+              transition={{ duration: 0.2 }}
+              className="space-y-6"
+            >
+              <div className="border-b border-slate-900 pb-6">
+                <span className="text-[10px] font-mono font-bold tracking-widest text-emerald-400 uppercase">CONTROLE DE COMISSÕES</span>
+                <h2 className="font-display text-2xl font-black text-white mt-1">Solicitações de Saque</h2>
+                <p className="text-slate-400 mt-2 text-sm leading-relaxed">
+                  Gerencie as requisições de saques via PIX efetuadas por parceiros e afiliados (membros Prata e Ouro).
+                </p>
+              </div>
+
+              {/* STATS OVERVIEW */}
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                <div className="bg-[#111419]/40 border border-slate-900 rounded-2xl p-6">
+                  <span className="text-[9px] font-mono font-bold text-slate-500 uppercase block tracking-wider">Aguardando Pagamento</span>
+                  <p className="text-2xl font-black text-amber-500 mt-2 font-display">
+                    R$ {withdrawRequests
+                      .filter(r => r.status === 'pendente')
+                      .reduce((acc, curr) => acc + curr.amount, 0)
+                      .toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                  </p>
+                  <p className="text-[10px] text-slate-500 font-mono mt-1">
+                    {withdrawRequests.filter(r => r.status === 'pendente').length} solicitações pendentes
+                  </p>
+                </div>
+
+                <div className="bg-[#111419]/40 border border-slate-900 rounded-2xl p-6">
+                  <span className="text-[9px] font-mono font-bold text-slate-500 uppercase block tracking-wider">Total Pago (Concluídos)</span>
+                  <p className="text-2xl font-black text-[#00ff87] mt-2 font-display">
+                    R$ {withdrawRequests
+                      .filter(r => r.status === 'concluido')
+                      .reduce((acc, curr) => acc + curr.amount, 0)
+                      .toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                  </p>
+                  <p className="text-[10px] text-slate-500 font-mono mt-1">
+                    {withdrawRequests.filter(r => r.status === 'concluido').length} saques processados
+                  </p>
+                </div>
+
+                <div className="bg-[#111419]/40 border border-slate-900 rounded-2xl p-6">
+                  <span className="text-[9px] font-mono font-bold text-slate-500 uppercase block tracking-wider">Total Acumulado</span>
+                  <p className="text-2xl font-black text-cyan-400 mt-2 font-display">
+                    R$ {withdrawRequests
+                      .reduce((acc, curr) => acc + curr.amount, 0)
+                      .toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                  </p>
+                  <p className="text-[10px] text-slate-500 font-mono mt-1">
+                    {withdrawRequests.length} solicitações registradas no total
+                  </p>
+                </div>
+              </div>
+
+              {/* LIST TABLE */}
+              <div className="bg-[#111419]/40 border border-slate-900 rounded-2xl p-6 space-y-4">
+                <h3 className="font-display font-black text-white text-base">Solicitações de Saque Recentes</h3>
+                
+                {isLoadingWithdrawRequests ? (
+                  <div className="py-8 text-center text-slate-500 text-xs font-mono">
+                    Carregando solicitações de saque...
+                  </div>
+                ) : withdrawRequests.length === 0 ? (
+                  <div className="py-12 text-center border border-dashed border-slate-800 rounded-xl bg-slate-950/20 text-slate-500 text-sm font-mono">
+                    Nenhuma solicitação de saque registrada até o momento.
+                  </div>
+                ) : (
+                  <div className="overflow-x-auto rounded-xl border border-slate-900 bg-slate-950/30">
+                    <table className="w-full text-left border-collapse">
+                      <thead>
+                        <tr className="bg-[#0a0c0f] border-b border-slate-900 text-[10px] font-mono text-slate-400 tracking-wider uppercase">
+                          <th className="py-4 px-6">Cliente / E-mail</th>
+                          <th className="py-4 px-6">Valor da Comissão</th>
+                          <th className="py-4 px-6">Chave PIX</th>
+                          <th className="py-4 px-6">Status</th>
+                          <th className="py-4 px-6 text-right">Ação</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-900/50">
+                        {withdrawRequests.map((req) => (
+                          <tr key={req.id} className="text-xs hover:bg-[#111419]/80 transition-colors">
+                            <td className="py-4 px-6">
+                              <div>
+                                <span className="font-bold text-white block">{req.user_name}</span>
+                                <span className="text-[10px] text-slate-500 font-mono block">{req.user_email}</span>
+                              </div>
+                            </td>
+                            <td className="py-4 px-6 font-mono font-bold text-[#00ff87] text-sm">
+                              R$ {req.amount.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                            </td>
+                            <td className="py-4 px-6 font-mono font-semibold text-white select-all">
+                              {req.pix_key}
+                            </td>
+                            <td className="py-4 px-6">
+                              {req.status === 'pendente' ? (
+                                <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full font-bold font-mono text-[9px] bg-amber-500/10 text-amber-500 border border-amber-500/20">
+                                  ⏳ PENDENTE
+                                </span>
+                              ) : (
+                                <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full font-bold font-mono text-[9px] bg-emerald-500/10 text-[#00ff87] border border-[#00ff87]/20">
+                                  ✓ CONCLUÍDO
+                                </span>
+                              )}
+                            </td>
+                            <td className="py-4 px-6 text-right">
+                              {req.status === 'pendente' ? (
+                                <button
+                                  type="button"
+                                  onClick={() => handleMarkAsPaid(req.id)}
+                                  className="px-3 py-1.5 bg-[#00ff87] hover:bg-[#00e076] text-black font-extrabold font-mono text-[10px] uppercase rounded-lg border border-[#00ff87]/10 tracking-wider transition-all duration-200 cursor-pointer shadow-[0_2px_8px_rgba(0,255,135,0.15)] active:scale-95"
+                                >
+                                  [ MARCAR COMO PAGO ]
+                                </button>
+                              ) : (
+                                <span className="text-slate-500 font-mono text-[10px] uppercase">PAGO ✓</span>
+                              )}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+            </motion.div>
+          )}
+
         </AnimatePresence>
       </main>
 
@@ -2671,6 +3005,185 @@ export default function AdminDashboard({ onLogout, onSwitchToClient }: AdminDash
             </div>
           );
         })()}
+      </AnimatePresence>
+
+      {/* MODAL: Visualização de Detalhes do Cliente */}
+      <AnimatePresence>
+        {selectedUserDetail && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/90 backdrop-blur-md overflow-y-auto animate-none">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              className="w-full max-w-2xl bg-[#111419] border border-slate-850 rounded-2xl overflow-hidden relative shadow-2xl p-6 md:p-8 space-y-6 my-auto"
+            >
+              {/* Close Button */}
+              <button
+                onClick={() => {
+                  setSelectedUserDetail(null);
+                  setSelectedUserProfile(null);
+                }}
+                className="absolute top-4 right-4 text-slate-500 hover:text-white transition-colors cursor-pointer"
+                title="Fechar"
+              >
+                <X className="h-5 w-5" />
+              </button>
+
+              {/* Header */}
+              <div className="flex flex-col sm:flex-row items-center gap-4 border-b border-slate-900 pb-5">
+                {selectedUserProfile?.avatar_url ? (
+                  <img
+                    src={selectedUserProfile.avatar_url}
+                    alt={selectedUserDetail.name}
+                    referrerPolicy="no-referrer"
+                    className="h-16 w-16 rounded-full border-2 border-[#00ff87] object-cover animate-none"
+                  />
+                ) : (
+                  <div className="h-16 w-16 rounded-full bg-gradient-to-br from-emerald-500/20 to-cyan-500/20 text-[#00ff87] border-2 border-[#00ff87]/30 flex items-center justify-center text-xl font-bold font-mono">
+                    {selectedUserDetail.name.split(' ').map((n: string) => n[0]).join('').slice(0, 2).toUpperCase()}
+                  </div>
+                )}
+                <div className="text-center sm:text-left space-y-1 flex-1">
+                  <div className="flex flex-col sm:flex-row sm:items-center gap-2">
+                    <h3 className="font-display text-xl font-extrabold text-white">{selectedUserDetail.name}</h3>
+                    <div>
+                      {selectedUserDetail.isCompositorPro ? (
+                        <span className="text-[9px] font-mono font-extrabold text-[#00ff87] bg-[#00ff87]/10 px-2 py-0.5 rounded border border-[#00ff87]/20 uppercase">
+                          ⚡ COMPOSITOR PRO
+                        </span>
+                      ) : (
+                        <span className="text-[9px] font-mono text-slate-400 bg-slate-900 px-2 py-0.5 rounded border border-slate-800 uppercase">
+                          COMPOSITOR PADRÃO
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                  <p className="text-xs text-slate-400 font-mono">{selectedUserDetail.email}</p>
+                  <p className="text-xs text-slate-500 font-mono">
+                    Telefone: {selectedUserProfile?.phone || 'Não informado'}
+                  </p>
+                </div>
+              </div>
+
+              {isLoadingUserDetail ? (
+                <div className="py-12 text-center text-xs font-mono text-slate-500 animate-pulse">
+                  Carregando dados financeiros e histórico...
+                </div>
+              ) : (
+                <>
+                  {/* Balance & Finance Grid */}
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                    <div className="bg-slate-950/60 border border-slate-900 rounded-xl p-3 space-y-1.5">
+                      <p className="text-[9px] font-mono text-slate-500 uppercase tracking-wider">Nível de Conta</p>
+                      <p className="text-xs font-bold text-white uppercase">
+                        {selectedUserDetail.isCompositorPro ? 'Pro ⚡' : 'Padrão'}
+                      </p>
+                    </div>
+
+                    <div className="bg-slate-950/60 border border-slate-900 rounded-xl p-3 space-y-1.5">
+                      <p className="text-[9px] font-mono text-slate-500 uppercase tracking-wider">Saldo Ativo</p>
+                      <p className="text-sm font-extrabold text-cyan-400 font-mono">
+                        {selectedUserDetail.credits} {selectedUserDetail.credits === 1 ? 'Guia' : 'Guias'}
+                      </p>
+                    </div>
+
+                    <div className="bg-slate-950/60 border border-slate-900 rounded-xl p-3 space-y-1.5">
+                      <p className="text-[9px] font-mono text-slate-500 uppercase tracking-wider">Bônus Indicação</p>
+                      <p className="text-sm font-extrabold text-emerald-400 font-mono">
+                        R$ {(selectedUserProfile?.discount_balance !== undefined ? Number(selectedUserProfile.discount_balance) : (supabaseDiscounts[selectedUserDetail.email.toLowerCase()] || 0)).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                      </p>
+                    </div>
+
+                    <div className="bg-slate-950/60 border border-slate-900 rounded-xl p-3 space-y-1.5">
+                      <p className="text-[9px] font-mono text-slate-500 uppercase tracking-wider">Total Investido</p>
+                      <p className="text-sm font-extrabold text-[#00ff87] font-mono">
+                        R$ {selectedUserInvested.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Compositions History */}
+                  <div className="space-y-3">
+                    <div className="flex items-center justify-between border-b border-slate-900 pb-2">
+                      <h4 className="font-display font-bold text-xs text-white uppercase tracking-wider">Histórico de Composições</h4>
+                      <span className="text-[10px] font-mono text-slate-500">
+                        Total: {compositions.filter(c => c.composerEmail.toLowerCase() === selectedUserDetail.email.toLowerCase()).length}
+                      </span>
+                    </div>
+
+                    <div className="max-h-48 overflow-y-auto border border-slate-900/50 rounded-xl bg-slate-950/20">
+                      {(() => {
+                        const userComps = compositions.filter(c => c.composerEmail.toLowerCase() === selectedUserDetail.email.toLowerCase());
+                        if (userComps.length === 0) {
+                          return (
+                            <div className="py-8 text-center text-xs font-mono text-slate-500">
+                              Nenhuma composição cadastrada para este cliente ainda.
+                            </div>
+                          );
+                        }
+
+                        return (
+                          <table className="w-full text-left border-collapse text-xs">
+                            <thead>
+                              <tr className="bg-slate-950/80 border-b border-slate-900 text-[9px] font-mono text-slate-500 uppercase tracking-wider">
+                                <th className="py-2.5 px-4">Música / Estilo</th>
+                                <th className="py-2.5 px-4">Data</th>
+                                <th className="py-2.5 px-4 text-right">Status</th>
+                              </tr>
+                            </thead>
+                            <tbody className="divide-y divide-slate-900/30 text-[11px]">
+                              {userComps.map((comp) => (
+                                <tr key={comp.id} className="hover:bg-slate-900/10">
+                                  <td className="py-2.5 px-4">
+                                    <div>
+                                      <span className="font-bold text-white">{comp.title}</span>
+                                      <p className="text-[9px] text-slate-500 font-mono">{comp.genre}</p>
+                                    </div>
+                                  </td>
+                                  <td className="py-2.5 px-4 font-mono text-slate-400">
+                                    {comp.date || '—'}
+                                  </td>
+                                  <td className="py-2.5 px-4 text-right">
+                                    <span className={`inline-block text-[9px] font-mono font-bold px-2 py-0.5 rounded border ${
+                                      comp.status === 'Concluído'
+                                        ? 'text-[#00ff87] bg-[#00ff87]/5 border-[#00ff87]/15'
+                                        : comp.status === 'Aprovado'
+                                        ? 'text-cyan-400 bg-cyan-400/5 border-cyan-400/15'
+                                        : comp.status === 'Rejeitado'
+                                        ? 'text-rose-400 bg-rose-400/5 border-rose-400/15'
+                                        : 'text-amber-400 bg-amber-400/5 border-amber-400/15'
+                                    }`}>
+                                      {comp.status}
+                                    </span>
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        );
+                      })()}
+                    </div>
+                  </div>
+
+                  {/* Action/Close button at base */}
+                  <div className="pt-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSelectedUserDetail(null);
+                        setSelectedUserProfile(null);
+                      }}
+                      className="w-full py-3 rounded-xl bg-slate-900 border border-slate-800 hover:border-slate-700 text-slate-300 hover:text-white font-extrabold font-mono text-xs uppercase tracking-wider transition-all duration-300 text-center cursor-pointer"
+                    >
+                      [ Fechar Detalhes ]
+                    </button>
+                  </div>
+                </>
+              )}
+
+            </motion.div>
+          </div>
+        )}
       </AnimatePresence>
 
     </div>

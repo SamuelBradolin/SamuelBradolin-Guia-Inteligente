@@ -34,9 +34,24 @@ export default function Dashboard({ userEmail, onLogout }: DashboardProps) {
   const [isCompositorPro, setIsCompositorPro] = useState(false);
   const [activeDiscount, setActiveDiscount] = useState(0);
   const [supabaseDiscount, setSupabaseDiscount] = useState(0);
+  const [withdrawableBalance, setWithdrawableBalance] = useState(0);
+  const [paidGuiasCount, setPaidGuiasCount] = useState(0);
+  const [showWithdrawModal, setShowWithdrawModal] = useState(false);
+  const [pixKey, setPixKey] = useState('');
+  const [withdrawAmount, setWithdrawAmount] = useState('');
+  const [isSubmittingWithdraw, setIsSubmittingWithdraw] = useState(false);
   const [globalNotice, setGlobalNotice] = useState<string | null>(null);
   const [privateNotices, setPrivateNotices] = useState<{ id: string; message: string; creditsGifted: number; discountGifted: number; date: string }[]>([]);
   
+  // Helper to compute user level based on paid guias count
+  const getUserLevel = (count: number) => {
+    if (count >= 15) return { name: 'Ouro', color: 'text-amber-400 border-amber-500/30 bg-amber-500/10', icon: '🏆' };
+    if (count >= 6) return { name: 'Prata', color: 'text-slate-300 border-slate-400/30 bg-slate-400/10', icon: '🥈' };
+    return { name: 'Bronze', color: 'text-amber-700 border-amber-800/30 bg-amber-800/10', icon: '🥉' };
+  };
+
+  const level = getUserLevel(paidGuiasCount);
+
   // Contribute states
   const [testimonial, setTestimonial] = useState('');
   const [testimonialCoupon, setTestimonialCoupon] = useState<string | null>(null);
@@ -45,29 +60,50 @@ export default function Dashboard({ userEmail, onLogout }: DashboardProps) {
   // Real guide list synchronized with Firestore
   const [guides, setGuides] = useState<GuideItem[]>([]);
 
-  // Synchronize discount_balance from Supabase profiles table in real-time
+  // Synchronize discount_balance, withdrawable_balance, and paid guias count from Supabase
   useEffect(() => {
     if (!userEmail) return;
 
-    const fetchSupabaseDiscount = async () => {
+    const fetchSupabaseData = async () => {
       try {
-        const { data, error } = await supabase
+        // 1. Fetch user profile (discount_balance and withdrawable_balance)
+        const { data: profileData, error: profileError } = await supabase
           .from('profiles')
-          .select('discount_balance')
+          .select('id, discount_balance, withdrawable_balance')
           .eq('email', userEmail)
           .maybeSingle();
-        if (!error && data) {
-          setSupabaseDiscount(Number(data.discount_balance) || 0);
+
+        let profileId = '';
+        if (!profileError && profileData) {
+          profileId = profileData.id;
+          setSupabaseDiscount(Number(profileData.discount_balance) || 0);
+          setWithdrawableBalance(Number(profileData.withdrawable_balance) || 0);
+        }
+
+        // 2. Fetch all paid guias to compute level
+        const { data: guiasData, error: guiasError } = await supabase
+          .from('guias')
+          .select('*')
+          .eq('status', 'pago');
+
+        if (!guiasError && guiasData) {
+          const userPaidGuias = guiasData.filter((g: any) => 
+            g.client_id === profileId || 
+            g.id_cliente === profileId || 
+            g.email?.toLowerCase() === userEmail.toLowerCase() || 
+            g.email_cliente?.toLowerCase() === userEmail.toLowerCase()
+          );
+          setPaidGuiasCount(userPaidGuias.length);
         }
       } catch (err) {
-        console.error("Erro ao carregar desconto do Supabase:", err);
+        console.error("Erro ao carregar dados do Supabase:", err);
       }
     };
 
-    fetchSupabaseDiscount();
+    fetchSupabaseData();
 
     // Set up real-time subscription for changes to this user's profile
-    const subscription = supabase
+    const profileSubscription = supabase
       .channel('profile-discount-changes')
       .on(
         'postgres_changes',
@@ -78,15 +114,37 @@ export default function Dashboard({ userEmail, onLogout }: DashboardProps) {
           filter: `email=eq.${userEmail}`
         },
         (payload) => {
-          if (payload.new && 'discount_balance' in payload.new) {
-            setSupabaseDiscount(Number(payload.new.discount_balance) || 0);
+          if (payload.new) {
+            if ('discount_balance' in payload.new) {
+              setSupabaseDiscount(Number(payload.new.discount_balance) || 0);
+            }
+            if ('withdrawable_balance' in payload.new) {
+              setWithdrawableBalance(Number(payload.new.withdrawable_balance) || 0);
+            }
           }
         }
       )
       .subscribe();
 
+    // Set up real-time subscription for guias changes to recalculate levels
+    const guiasSubscription = supabase
+      .channel('guias-changes-recalc')
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'guias'
+        },
+        () => {
+          fetchSupabaseData();
+        }
+      )
+      .subscribe();
+
     return () => {
-      supabase.removeChannel(subscription);
+      supabase.removeChannel(profileSubscription);
+      supabase.removeChannel(guiasSubscription);
     };
   }, [userEmail]);
 
@@ -681,6 +739,69 @@ export default function Dashboard({ userEmail, onLogout }: DashboardProps) {
     window.open(`https://wa.me/?text=${message}`, '_blank');
   };
 
+  const handleRequestWithdraw = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!pixKey.trim()) {
+      showToast("Por favor, informe a chave PIX.");
+      return;
+    }
+    const amountNum = Number(withdrawAmount);
+    if (isNaN(amountNum) || amountNum <= 0) {
+      showToast("Por favor, insira um valor de saque válido.");
+      return;
+    }
+    if (amountNum > withdrawableBalance) {
+      showToast(`Saldo insuficiente. Seu saldo disponível é R$ ${withdrawableBalance.toFixed(2)}.`);
+      return;
+    }
+
+    setIsSubmittingWithdraw(true);
+    try {
+      // 1. Get profile ID
+      const { data: profile } = await supabase
+        .from('profiles')
+        .select('id')
+        .eq('email', userEmail)
+        .maybeSingle();
+
+      if (!profile) {
+        throw new Error("Perfil não encontrado no Supabase.");
+      }
+
+      // 2. Insert withdrawal request
+      const { error: insertError } = await supabase
+        .from('withdraw_requests')
+        .insert({
+          user_id: profile.id,
+          amount: amountNum,
+          pix_key: pixKey,
+          status: 'pendente'
+        });
+
+      if (insertError) throw insertError;
+
+      // 3. Subtract from profiles table balance
+      const newWithdrawable = Math.max(0, withdrawableBalance - amountNum);
+      const { error: updateError } = await supabase
+        .from('profiles')
+        .update({ withdrawable_balance: newWithdrawable })
+        .eq('id', profile.id);
+
+      if (updateError) throw updateError;
+
+      setWithdrawableBalance(newWithdrawable);
+      setShowWithdrawModal(false);
+      setPixKey('');
+      setWithdrawAmount('');
+      showToast("✓ Solicitação de saque PIX enviada com sucesso!");
+    } catch (err: any) {
+      console.error("Erro ao solicitar saque:", err);
+      showToast("Erro ao solicitar o saque via PIX. Tente novamente.");
+    } finally {
+      setIsSubmittingWithdraw(false);
+    }
+  };
+
   return (
     <div className="flex-1 flex flex-col md:flex-row min-h-[calc(100vh-100px)] bg-[#0d0f13] text-slate-100 relative">
       
@@ -718,6 +839,12 @@ export default function Dashboard({ userEmail, onLogout }: DashboardProps) {
             <div>
               <h4 className="font-display font-bold text-sm text-white">{composerName}</h4>
               <p className="text-[10px] font-mono text-slate-500 truncate max-w-[170px]">{userEmail}</p>
+            </div>
+
+            {/* Level Badge */}
+            <div className={`w-full py-1.5 px-3 rounded-lg border flex items-center justify-center gap-1.5 text-[9px] font-mono font-extrabold uppercase tracking-widest ${level.color}`}>
+              <span className="text-xs">{level.icon}</span>
+              <span>Nível: {level.name}</span>
             </div>
 
             {/* Glowing credits counter */}
@@ -1475,12 +1602,56 @@ export default function Dashboard({ userEmail, onLogout }: DashboardProps) {
               className="space-y-6"
             >
               {/* Header Info */}
-              <div className="border-b border-slate-900 pb-6">
-                <span className="text-[10px] font-mono font-bold tracking-widest text-[#00ff87] uppercase">PROGRAMA DE RECOMPENSAS</span>
-                <h2 className="font-display text-2xl font-black text-white mt-1">Ajude a Comunidade e Economize</h2>
-                <p className="text-slate-400 mt-2 text-sm leading-relaxed">
-                  Escolha uma das opções abaixo para acumular descontos na produção das suas próximas músicas.
-                </p>
+              <div className="border-b border-slate-900 pb-6 flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+                <div>
+                  <span className="text-[10px] font-mono font-bold tracking-widest text-[#00ff87] uppercase">PROGRAMA DE RECOMPENSAS</span>
+                  <h2 className="font-display text-2xl font-black text-white mt-1">Ajude a Comunidade e Economize</h2>
+                  <p className="text-slate-400 mt-2 text-sm leading-relaxed">
+                    Escolha uma das opções abaixo para acumular descontos na produção das suas próximas músicas.
+                  </p>
+                </div>
+                <div className="flex items-center gap-2 self-start md:self-center">
+                  <div className={`px-4 py-2.5 rounded-xl border flex items-center gap-2 font-mono font-extrabold text-xs uppercase tracking-wider ${level.color} shadow-lg`}>
+                    <span className="text-lg">{level.icon}</span>
+                    <span>Nível {level.name}</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Gamification Level & Progression Rules Header */}
+              <div className="bg-[#111419]/30 border border-slate-900 rounded-2xl p-6 grid grid-cols-1 md:grid-cols-3 gap-6 items-center">
+                <div className="space-y-1 text-center md:text-left border-b md:border-b-0 md:border-r border-slate-900/60 pb-4 md:pb-0 md:pr-6">
+                  <span className="text-[9px] font-mono font-bold text-slate-500 uppercase tracking-widest block">SEU STATUS DE GAMIFICAÇÃO</span>
+                  <div className="flex flex-col items-center md:items-start">
+                    <span className="text-3xl font-black font-display text-white mt-1 flex items-center gap-2">
+                      {level.icon} {level.name}
+                    </span>
+                    <p className="text-[10px] text-slate-400 font-mono mt-1">
+                      Você possui <strong className="text-[#00ff87]">{paidGuiasCount}</strong> {paidGuiasCount === 1 ? 'guia paga' : 'guias pagas'} no histórico.
+                    </p>
+                  </div>
+                </div>
+
+                <div className="col-span-1 md:col-span-2 space-y-3">
+                  <span className="text-[9px] font-mono font-bold text-[#00ff87] uppercase tracking-widest block text-center md:text-left">TABELA DE CRITÉRIOS DE PROGRESSÃO</span>
+                  <div className="grid grid-cols-3 gap-2 text-center text-[10px] font-mono">
+                    <div className={`p-2.5 rounded-xl border ${paidGuiasCount < 6 ? 'bg-amber-800/10 border-amber-800/30 text-amber-500 font-extrabold' : 'bg-slate-950/40 border-slate-900/50 text-slate-500'}`}>
+                      <div className="text-xs">🥉 Bronze</div>
+                      <div className="text-[9px] text-slate-400 mt-1">0 - 5 guias</div>
+                      <div className="text-[8px] text-slate-500 font-bold mt-0.5">Indica: +R$ 10 Desconto</div>
+                    </div>
+                    <div className={`p-2.5 rounded-xl border ${paidGuiasCount >= 6 && paidGuiasCount <= 14 ? 'bg-slate-400/10 border-slate-400/30 text-slate-300 font-extrabold' : 'bg-slate-950/40 border-slate-900/50 text-slate-500'}`}>
+                      <div className="text-xs">🥈 Prata</div>
+                      <div className="text-[9px] text-slate-400 mt-1">6 - 14 guias</div>
+                      <div className="text-[8px] text-slate-500 font-bold mt-0.5">Indica: +R$ 5 Saque PIX</div>
+                    </div>
+                    <div className={`p-2.5 rounded-xl border ${paidGuiasCount >= 15 ? 'bg-amber-500/10 border-amber-500/30 text-amber-400 font-extrabold' : 'bg-slate-950/40 border-slate-900/50 text-slate-500'}`}>
+                      <div className="text-xs">🏆 Ouro</div>
+                      <div className="text-[9px] text-slate-400 mt-1">15+ guias</div>
+                      <div className="text-[8px] text-slate-500 font-bold mt-0.5">Indica: +R$ 10 Saque PIX</div>
+                    </div>
+                  </div>
+                </div>
               </div>
 
               {/* Reward Cards Grid */}
@@ -1611,6 +1782,53 @@ export default function Dashboard({ userEmail, onLogout }: DashboardProps) {
                     </div>
                   </div>
                 </div>
+
+                {/* DYNAMIC CARD: SALDO DISPONÍVEL PARA SAQUE (ONLY FOR PRATA OR OURO) */}
+                {paidGuiasCount >= 6 && (
+                  <div className="md:col-span-2 bg-gradient-to-br from-[#111419]/90 to-[#07090c]/90 border-2 border-[#00ff87]/30 rounded-2xl p-6 flex flex-col sm:flex-row items-center justify-between gap-6 relative overflow-hidden shadow-2xl mt-4">
+                    <div className="absolute top-0 right-0 w-32 h-32 bg-[#00ff87]/5 rounded-full blur-2xl -mr-10 -mt-10 pointer-events-none"></div>
+                    <div className="space-y-3 flex-1 text-center sm:text-left">
+                      <div className="flex items-center justify-center sm:justify-start gap-2">
+                        <span className="text-sm">💸</span>
+                        <span className="text-[10px] font-mono font-bold tracking-widest text-[#00ff87] uppercase">SAQUE VIA PIX ATIVO</span>
+                      </div>
+                      <h3 className="font-display font-black text-xl text-white">Resgate seu saldo em dinheiro real</h3>
+                      <p className="text-xs text-slate-400 max-w-lg leading-relaxed">
+                        Como membro do nível <strong className="text-[#00ff87] uppercase">{level.name} {level.icon}</strong>, suas indicações agora geram comissões em dinheiro direto na sua conta bancária via PIX.
+                      </p>
+                      
+                      {/* Balance Display */}
+                      <div className="inline-flex items-center gap-2 px-4 py-2 bg-slate-950/80 border border-slate-900 rounded-xl mt-1">
+                        <span className="text-[10px] font-mono text-slate-500 uppercase">Saldo para Saque:</span>
+                        <span className="text-base font-mono font-extrabold text-[#00ff87]">
+                          R$ {withdrawableBalance.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                        </span>
+                      </div>
+                    </div>
+
+                    <div className="w-full sm:w-auto">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (withdrawableBalance <= 0) {
+                            showToast("Seu saldo de saque está zerado!");
+                            return;
+                          }
+                          setWithdrawAmount(withdrawableBalance.toString());
+                          setShowWithdrawModal(true);
+                        }}
+                        disabled={withdrawableBalance <= 0}
+                        className={`w-full sm:w-auto px-6 py-4 rounded-xl font-mono text-xs font-bold uppercase tracking-wider transition-all duration-300 text-center flex items-center justify-center gap-2 ${
+                          withdrawableBalance > 0
+                            ? 'bg-[#00ff87] hover:bg-[#00e076] text-black shadow-[0_4px_15px_rgba(0,255,135,0.15)] active:scale-[0.98] cursor-pointer'
+                            : 'bg-slate-900 border border-slate-800 text-slate-500 cursor-not-allowed'
+                        }`}
+                      >
+                        <span>[ SOLICITAR SAQUE VIA PIX ]</span>
+                      </button>
+                    </div>
+                  </div>
+                )}
 
               </div>
 
@@ -1856,6 +2074,92 @@ export default function Dashboard({ userEmail, onLogout }: DashboardProps) {
                 <span>MERCADO PAGO • CRÉDITOS LIBERADOS EM SEGUNDOS</span>
               </p>
 
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* SOLICITAR SAQUE VIA PIX MODAL */}
+      <AnimatePresence>
+        {showWithdrawModal && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/90 backdrop-blur-md overflow-y-auto">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              className="w-full max-w-md bg-[#111419] border border-slate-850 rounded-2xl overflow-hidden relative shadow-2xl p-6 md:p-8 space-y-6 animate-none"
+            >
+              <button
+                onClick={() => setShowWithdrawModal(false)}
+                className="absolute top-4 right-4 text-slate-500 hover:text-white cursor-pointer"
+                title="Fechar"
+              >
+                <X className="h-5 w-5" />
+              </button>
+
+              <div className="text-center space-y-2">
+                <div className="h-12 w-12 rounded-full bg-[#00ff87]/15 text-[#00ff87] flex items-center justify-center mx-auto border border-[#00ff87]/20">
+                  <span className="text-xl">💸</span>
+                </div>
+                <h3 className="font-display text-lg font-extrabold text-white">Solicitar Saque via PIX</h3>
+                <p className="text-xs text-slate-400 max-w-xs mx-auto">
+                  Resgate seu saldo em dinheiro diretamente para sua conta bancária cadastrada pelo PIX.
+                </p>
+              </div>
+
+              <div className="p-4 rounded-xl bg-slate-950/50 border border-slate-900 text-center space-y-1">
+                <span className="text-[9px] font-mono text-slate-500 uppercase block">Saldo Disponível para Resgate</span>
+                <span className="text-xl font-mono font-extrabold text-[#00ff87]">
+                  R$ {withdrawableBalance.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                </span>
+              </div>
+
+              <form onSubmit={handleRequestWithdraw} className="space-y-4">
+                <div className="space-y-1.5">
+                  <label className="block text-[10px] font-mono text-slate-400 font-bold uppercase tracking-wider">
+                    Valor do Saque (R$)
+                  </label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    min="0.01"
+                    max={withdrawableBalance}
+                    required
+                    value={withdrawAmount}
+                    onChange={(e) => setWithdrawAmount(e.target.value)}
+                    placeholder="Ex: 50.00"
+                    className="w-full px-4 py-3 bg-[#14181f] border border-slate-800 focus:border-[#00ff87]/50 rounded-xl text-sm text-white font-mono focus:outline-none transition-colors"
+                  />
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className="block text-[10px] font-mono text-slate-400 font-bold uppercase tracking-wider">
+                    Sua Chave PIX
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    value={pixKey}
+                    onChange={(e) => setPixKey(e.target.value)}
+                    placeholder="CPF, E-mail, Telefone ou Chave Aleatória"
+                    className="w-full px-4 py-3 bg-[#14181f] border border-slate-800 focus:border-[#00ff87]/50 rounded-xl text-sm text-white focus:outline-none transition-colors"
+                  />
+                </div>
+
+                <div className="pt-2">
+                  <button
+                    type="submit"
+                    disabled={isSubmittingWithdraw || withdrawableBalance <= 0}
+                    className="w-full py-3.5 rounded-xl bg-gradient-to-r from-[#00ff87] to-[#00e076] hover:from-[#00ff87]/90 hover:to-[#00e076]/90 disabled:from-slate-800 disabled:to-slate-800 text-black disabled:text-slate-500 font-extrabold font-mono text-xs uppercase tracking-wider transition-all duration-300 shadow-[0_4px_15px_rgba(0,255,135,0.1)] flex items-center justify-center gap-2 cursor-pointer animate-none"
+                  >
+                    {isSubmittingWithdraw ? (
+                      <span>Enviando solicitação...</span>
+                    ) : (
+                      <span>[ ENVIAR SOLICITAÇÃO DE SAQUE ]</span>
+                    )}
+                  </button>
+                </div>
+              </form>
             </motion.div>
           </div>
         )}
